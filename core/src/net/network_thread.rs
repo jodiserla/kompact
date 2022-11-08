@@ -249,7 +249,7 @@ impl NetworkThread {
                     if let Some(mut udp_state) = self.udp_state.take(){
                         if event.writeable {
                             print!("event is writeable ");
-                           // self.write_quic();
+                            self.write_quic();
                             self.write_udp(&mut udp_state);
                         }
                         if event.readable {
