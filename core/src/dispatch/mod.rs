@@ -570,7 +570,7 @@ impl NetworkDispatcher {
                         retry,
                         self.cfg.max_connection_retry_attempts
                     );
-                    bridge.connect(Transport::Tcp, addr).unwrap();
+                    bridge.connect(Transport::Quic, addr).unwrap();
                 }
             } else {
                 // Too many retries, give up on the connection.
@@ -582,7 +582,7 @@ impl NetworkDispatcher {
                 self.connections.remove(&addr);
                 self.network_status_port
                     .trigger(NetworkStatus::ConnectionDropped(SystemPath::with_socket(
-                        Transport::Tcp,
+                        Transport::Quic,
                         addr,
                     )));
             }
@@ -757,13 +757,73 @@ impl NetworkDispatcher {
         addr: SocketAddr,
         data: DispatchData,
     ) -> Result<(), NetworkBridgeErr> {
-        if let Some(bridge) = &self.net_bridge {
-            bridge.route(addr, data, net::Protocol::Quic)?;
-        } else {
-            warn!(
-                self.ctx.log(),
-                "Dropping Quic message to {}, as bridge is not connected.", addr
-            );
+        let state: &mut ConnectionState =
+            self.connections.entry(addr).or_insert(ConnectionState::New);
+        let next: Option<ConnectionState> = match *state {
+            ConnectionState::New => {
+                debug!(
+                    self.ctx.log(),
+                    "No connection found; establishing and queuing frame"
+                );
+                self.queue_manager.enqueue_data(data, addr);
+
+                if let Some(ref mut bridge) = self.net_bridge {
+                    debug!(self.ctx.log(), "Establishing new connection to {:?}", addr);
+                    self.retry_map.insert(addr, 0); // Make sure we will re-request connection later
+                    bridge.connect(Transport::Quic, addr).unwrap();
+                    Some(ConnectionState::Initializing)
+                } else {
+                    error!(self.ctx.log(), "No network bridge found; dropping message");
+                    None
+                }
+            }
+            ConnectionState::Connected(_) => {
+                if self.queue_manager.has_data(&addr) {
+                    self.queue_manager.enqueue_data(data, addr);
+
+                    if let Some(bridge) = &self.net_bridge {
+                        while let Some(queued_data) = self.queue_manager.pop_data(&addr) {
+                            bridge.route(addr, queued_data, net::Protocol::Quic)?;
+                        }
+                    }
+                    None
+                } else {
+                    // Send frame
+                    if let Some(bridge) = &self.net_bridge {
+                        bridge.route(addr, data, net::Protocol::Quic)?;
+                    }
+                    None
+                }
+            }
+            ConnectionState::Initializing => {
+                self.queue_manager.enqueue_data(data, addr);
+                None
+            }
+            ConnectionState::Closed(_) => {
+                self.queue_manager.enqueue_data(data, addr);
+                if let Some(bridge) = &self.net_bridge {
+                    self.retry_map.entry(addr).or_insert(0);
+                    bridge.connect(Tcp, addr)?;
+                }
+                Some(ConnectionState::Initializing)
+            }
+            ConnectionState::Lost(_) => {
+                // May be recovered...
+                self.queue_manager.enqueue_data(data, addr);
+                None
+            }
+            ConnectionState::Blocked => {
+                warn!(
+                    self.ctx.log(),
+                    "Tried sending a message to a blocked connection: {:?}. Dropping message.",
+                    addr
+                );
+                None
+            }
+        };
+
+        if let Some(next) = next {
+            *state = next;
         }
         Ok(())
     }

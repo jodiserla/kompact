@@ -109,7 +109,7 @@ pub mod events {
         /// Tells the network thread to Die as soon as possible, without graceful shutdown.
         Kill,
         /// Tells the `NetworkThread` to open up a channel to the `SocketAddr` via Quic
-        ConnectQuic(SocketAddr, QuicEndpoint),
+        ConnectQuic(SocketAddr),
         /// Tells the `NetworkThread` to open up a channel to the `SocketAddr`
         Connect(SocketAddr),
         /// Acknowledges a closed channel, required to ensure FIFO ordering under connection loss
@@ -339,8 +339,9 @@ impl Bridge {
                 Ok(())
             }
             Transport::Quic => {
+                print!("CONNECT QUIC PROTOCOL ");
                 self.network_input_queue
-                    .send(events::DispatchEvent::Connect(addr))?;
+                    .send(events::DispatchEvent::ConnectQuic(addr))?;
                 self.waker.wake()?;
                 Ok(())
             }
