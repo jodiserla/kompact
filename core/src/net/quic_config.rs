@@ -7,8 +7,6 @@ use quinn_proto::{
 };
 use rustls::{Certificate, KeyLogFile, PrivateKey};
 use lazy_static::lazy_static;
-use assert_matches::assert_matches;
-
 
 pub fn server_config() -> ServerConfig {
     ServerConfig::with_crypto(Arc::new(server_crypto()))
@@ -69,40 +67,3 @@ lazy_static! {
     static ref CERTIFICATE: rcgen::Certificate =
         rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
 }
-
-// #[test]
-// fn version_negotiate_server() {
-//     let client_addr = "127.0.0.1:7890".parse().expect("Address should work");
-//     let mut server = Endpoint::new(Default::default(), Some(Arc::new(server_config())));
-//     let now = Instant::now();
-//     let event = server.handle(
-//         now,
-//         client_addr,
-//         None,
-//         None,
-//         // Long-header packet with reserved version number
-//         hex!("80 0a1a2a3a 04 00000000 04 00000000 00")[..].into(),
-//     );
-//     assert!(event.is_none());
-
-//     let io = server.poll_transmit();
-//     assert!(io.is_some());
-//     if let Some(Transmit { contents, .. }) = io {
-//         assert_ne!(contents[0] & 0x80, 0);
-//         assert_eq!(&contents[1..15], hex!("00000000 04 00000000 04 00000000"));
-//        assert!(contents[15..].chunks(4).any(|x| {
-//            DEFAULT_SUPPORTED_VERSIONS.contains(&u32::from_be_bytes(x.try_into().unwrap()))
-//        }));
-//     }
-//     assert_matches!(server.poll_transmit(), None);
-//     /// The QUIC protocol version implemented.
-//     pub const DEFAULT_SUPPORTED_VERSIONS: &[u32] = &[
-//         0x00000001,
-//         0xff00_001d,
-//         0xff00_001e,
-//         0xff00_001f,
-//         0xff00_0020,
-//         0xff00_0021,
-//         0xff00_0022,
-//     ];
-// }
