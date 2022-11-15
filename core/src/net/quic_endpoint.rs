@@ -133,11 +133,12 @@ impl QuicEndpoint {
                     conn.handle_event(event);
                 }
             }
-            match udp_state.try_write() {
-                Ok(_) => {},
-                // Other errors we'll consider fatal.
-                Err(err) => {
-                }
+
+        }
+        match udp_state.try_write() {
+            Ok(_) => {},
+            // Other errors we'll consider fatal.
+            Err(err) => {
             }
         }
     }
@@ -168,25 +169,16 @@ impl QuicEndpoint {
                     }
                 }
                 self.drive(now, udp_state);
-                return Ok(());
+                return Ok(self.drive(now, udp_state));
             }
             Err(err) => {
-                println!("Hello B(");
                 return Err(err);
             }
         }
     }
 
     pub(super) fn try_write_quic(&mut self, now: Instant, udp_state: &mut UdpState) -> io::Result<()>{
-        self.drive(now, udp_state);
-
-        match udp_state.try_write() {
-            Ok(_) => Ok({}),
-            // Other errors we'll consider fatal.
-            Err(err) => {
-                return Err(err);
-            }
-        }
+        Ok(self.drive(now, udp_state))
     }
 
     
