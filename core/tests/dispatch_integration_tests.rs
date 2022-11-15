@@ -1,7 +1,9 @@
+use arc_swap::ArcSwap;
 use crossbeam_channel::Receiver as Rcv;
 use ipnet::IpNet;
-use kompact::{prelude::*, prelude_test::net_test_helpers::*};
+use kompact::{prelude::*, prelude_test::net_test_helpers::*, lookup::ActorStore};
 use std::{net::SocketAddr, sync::Arc, thread, time::Duration};
+
 
 const REGISTRATION_TIMEOUT: Duration = Duration::from_millis(1000);
 const STOP_COMPONENT_TIMEOUT: Duration = Duration::from_millis(1000);

@@ -133,6 +133,12 @@ impl QuicEndpoint {
                     conn.handle_event(event);
                 }
             }
+            match udp_state.try_write() {
+                Ok(_) => {},
+                // Other errors we'll consider fatal.
+                Err(err) => {
+                }
+            }
         }
     }
     pub(super) fn try_read_quic(&mut self, now: Instant, udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>) -> io::Result<()> { 
@@ -165,7 +171,8 @@ impl QuicEndpoint {
                 return Ok(());
             }
             Err(err) => {
-                 return Err(err);
+                println!("Hello B(");
+                return Err(err);
             }
         }
     }
