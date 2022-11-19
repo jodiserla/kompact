@@ -93,8 +93,6 @@ pub mod events {
     use ipnet::IpNet;
     use std::net::IpAddr;
 
-    use super::{quic_endpoint::QuicEndpoint, udp_state::UdpState};
-
     /// BridgeEvents emitted to the network `Bridge`
     #[derive(Debug)]
     pub enum DispatchEvent {
@@ -331,6 +329,7 @@ impl Bridge {
     /// # Errors
     /// If the provided protocol is not supported
     pub fn connect(&self, proto: Transport, addr: SocketAddr) -> Result<(), NetworkBridgeErr> {
+        println!("CONNECT FUNCTION IN NET MOD FILE CONNECT CONNCECT");
         match proto {
             Transport::Tcp => {
                 self.network_input_queue
@@ -339,7 +338,6 @@ impl Bridge {
                 Ok(())
             }
             Transport::Quic => {
-                print!("CONNECT QUIC PROTOCOL FROM NET MOD FILE STUFF ");
                 self.network_input_queue
                     .send(events::DispatchEvent::ConnectQuic(addr))?;
                 self.waker.wake()?;

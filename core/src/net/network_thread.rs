@@ -462,11 +462,9 @@ impl NetworkThread {
         }
     }
 
-   fn read_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
-        match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool) {
-            Ok(_) => {
-               // trace!(self.log, "Reading quic from network thread {:?}", self.addr);
-            }
+   fn read_quic(&self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
+        match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
+            Ok(_) => {}
             Err(e) => {
                 warn!(self.log, "Error during QUIC reading: {}", e);
             }
@@ -474,9 +472,7 @@ impl NetworkThread {
     }
    fn write_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
         match endpoint.try_write_quic(Instant::now(), udp_state) {
-            Ok(_) => {
-              //  trace!(self.log, "Writing quic from network thread {:?}", self.addr);
-            }
+            Ok(_) => {}
             Err(e) => {
                 warn!(self.log, "Error during QUIC writing: {}", e);
             }

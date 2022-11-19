@@ -1,5 +1,6 @@
 use async_std::fs::write;
 use bytes::{BytesMut, BufMut};
+use tracing::dispatcher;
 use tracing::log::logger;
 use uuid::Variant;
 use super::*;
@@ -143,7 +144,7 @@ impl QuicEndpoint {
             }
         }
     }
-    pub(super) fn try_read_quic(&mut self, now: Instant, udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>) -> io::Result<()> { 
+    pub(super) fn try_read_quic(&mut self, now: Instant, udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>, dispatcher_ref: DispatcherRef) -> io::Result<()> { 
         //consume icoming packets and connection-generated events via handle and handle_event
         match udp_state.try_read(buffer_pool) {
             Ok((n, addr)) => {
@@ -168,7 +169,7 @@ impl QuicEndpoint {
                             .push_back(event);
                         }
                     }
-                    self.process_quic_events(ch);
+                    self.process_quic_events(ch, dispatcher_ref);
                 }
                 self.drive(now, udp_state);
                 return Ok(self.drive(now, udp_state));
@@ -183,7 +184,7 @@ impl QuicEndpoint {
         Ok(self.drive(now, udp_state))
     }
 
-    pub fn process_quic_events(&mut self, ch: ConnectionHandle) {
+    pub fn process_quic_events(&mut self, ch: ConnectionHandle, dispatcher_ref: DispatcherRef) {
         while let Some(event) = self.conn_mut(ch).poll() {
             match event {
                 Event::HandshakeDataReady => {
@@ -191,6 +192,9 @@ impl QuicEndpoint {
                 }
                 Event::Connected => {
                     println!("Connected {:?}", ch);
+                    dispatcher_ref.tell(DispatchEnvelope::Event(EventEnvelope::Network(NetworkStatus::ConnectionEstablished(
+                        SystemPath::with_socket(Transport::Quic, self.addr),
+                        SessionId::new_unique()))));
                 }
                 Event::ConnectionLost { reason } => {
                     println!("lost connection due to {:?}", reason);

@@ -348,7 +348,8 @@ fn remote_delivery_to_registered_actors_eager() {
 
     ponger_unique_path.set_protocol(Transport::Quic);
     //ponger_named_path.set_protocol(Transport::Quic);
-    
+    // ponger_named_path.via_quic();
+    //ponger_unique.via_quic();
 
     let (pinger_unique, all_unique_pongs_received_future) =
         start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path));

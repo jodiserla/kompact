@@ -7,7 +7,7 @@ use crate::{
 use std::{pin::Pin, sync::Arc};
 
 use crate::{
-    actors::{NamedPath, Transport::Tcp},
+    actors::{NamedPath, Transport::Quic},
     messaging::{
         ActorRegistration,
         DispatchData,
@@ -85,26 +85,10 @@ impl NetworkConfig {
     pub fn new(addr: SocketAddr) -> Self {
         NetworkConfig {
             addr,
-            transport: Transport::Tcp,
+            transport: Transport::Quic,
             buffer_config: BufferConfig::default(),
             custom_allocator: None,
-            tcp_nodelay: true,
-            max_connection_retry_attempts: defaults::MAX_RETRY_ATTEMPTS,
-            connection_retry_interval: defaults::RETRY_CONNECTIONS_INTERVAL,
-            boot_timeout: defaults::BOOT_TIMEOUT,
-            soft_connection_limit: defaults::SOFT_CONNECTION_LIMIT,
-            hard_connection_limit: defaults::HARD_CONNECTION_LIMIT,
-        }
-    }
-    /// Create a new config with `addr` and protocol `protocol`
-    /// NetworkDispatcher and NetworkThread will use the default `BufferConfig`
-    pub fn new2(addr: SocketAddr, transport: Transport) -> Self {
-        NetworkConfig {
-            addr,
-            transport,
-            buffer_config: BufferConfig::default(),
-            custom_allocator: None,
-            tcp_nodelay: true,
+            tcp_nodelay: false,
             max_connection_retry_attempts: defaults::MAX_RETRY_ATTEMPTS,
             connection_retry_interval: defaults::RETRY_CONNECTIONS_INTERVAL,
             boot_timeout: defaults::BOOT_TIMEOUT,
@@ -132,10 +116,10 @@ impl NetworkConfig {
         buffer_config.validate();
         NetworkConfig {
             addr,
-            transport: Transport::Tcp,
+            transport: Transport::Quic,
             buffer_config,
             custom_allocator: Some(custom_allocator),
-            tcp_nodelay: true,
+            tcp_nodelay: false,
             max_connection_retry_attempts: defaults::MAX_RETRY_ATTEMPTS,
             connection_retry_interval: defaults::RETRY_CONNECTIONS_INTERVAL,
             boot_timeout: defaults::BOOT_TIMEOUT,
@@ -455,7 +439,7 @@ impl NetworkDispatcher {
             next
         });
 
-        self.schedule_retries();
+        //self.schedule_retries();
     }
 
     fn start_bridge(&mut self, address: SocketAddr) -> () {
@@ -484,7 +468,7 @@ impl NetworkDispatcher {
         let connections: Vec<(SocketAddr, ConnectionState)> = self.connections.drain().collect();
         for (address, state) in connections {
             if let ConnectionState::Connected(id) = state {
-                self.connection_lost(SystemPath::with_socket(Transport::Tcp, address), id);
+                self.connection_lost(SystemPath::with_socket(Transport::Quic, address), id);
             } else {
                 self.connections.insert(address, state);
             }
@@ -669,7 +653,7 @@ impl NetworkDispatcher {
             while let Some(frame) = self.queue_manager.pop_data(addr) {
                 if let Some(bridge) = &self.net_bridge {
                     //println!("Sending queued frame to newly established connection");
-                    if let Err(e) = bridge.route(*addr, frame, net::Protocol::Tcp) {
+                    if let Err(e) = bridge.route(*addr, frame, net::Protocol::Quic) {
                         error!(self.ctx.log(), "Bridge error while routing {:?}", e);
                     }
                 }
@@ -779,11 +763,11 @@ impl NetworkDispatcher {
                 }
             }
             ConnectionState::Connected(_) => {
-                debug!(self.ctx.log(), "BEFORE IF STATEMENT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT {:?}", addr);
+                debug!(self.ctx.log(), "BEFORE IF STATEMENT CONNECT {:?}", addr);
 
                 if self.queue_manager.has_data(&addr) {
                     self.queue_manager.enqueue_data(data, addr);
-                    debug!(self.ctx.log(), "CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT {:?}", addr);
+                    debug!(self.ctx.log(), "CONNECTIONSTATE CONNECT {:?}", addr);
                     if let Some(bridge) = &self.net_bridge {
                         while let Some(queued_data) = self.queue_manager.pop_data(&addr) {
                             bridge.route(addr, queued_data, net::Protocol::Quic)?;
@@ -799,12 +783,14 @@ impl NetworkDispatcher {
                 }
             }
             ConnectionState::Initializing => {
-                debug!(self.ctx.log(), "INITIALIZE INITIALIZE INITIALIZE {:?}", addr);
+                debug!(self.ctx.log(), "CONNECTIONSTATE INITIALIZE {:?}", addr);
 
                 self.queue_manager.enqueue_data(data, addr);
                 None
             }
             ConnectionState::Closed(_) => {
+                debug!(self.ctx.log(), "CONNECTIONSTATE CLOSED {:?}", addr);
+
                 self.queue_manager.enqueue_data(data, addr);
                 if let Some(bridge) = &self.net_bridge {
                     self.retry_map.entry(addr).or_insert(0);
@@ -900,7 +886,7 @@ impl NetworkDispatcher {
                 self.queue_manager.enqueue_data(data, addr);
                 if let Some(bridge) = &self.net_bridge {
                     self.retry_map.entry(addr).or_insert(0);
-                    bridge.connect(Tcp, addr)?;
+                    bridge.connect(Transport::Tcp, addr)?;
                 }
                 Some(ConnectionState::Initializing)
             }
@@ -963,6 +949,8 @@ impl NetworkDispatcher {
                     self.route_remote_udp(addr, msg)
                 }
                 Transport::Quic => {
+                    println!(" ROUTE REMOTE QUIC ");
+
                     let addr = SocketAddr::new(*dst.address(), dst.port());
                     self.route_remote_quic(addr, msg)
                 }
@@ -1088,7 +1076,7 @@ impl NetworkDispatcher {
                     if let Some(bridge) = &self.net_bridge {
                         while self.queue_manager.has_data(&addr) {
                             if let Some(data) = self.queue_manager.pop_data(&addr) {
-                                if let Err(e) = bridge.route(addr, data, Protocol::Tcp) {
+                                if let Err(e) = bridge.route(addr, data, Protocol::Quic) {
                                     error!(self.ctx.log(), "Bridge error while routing {:?}", e);
                                 }
                             }

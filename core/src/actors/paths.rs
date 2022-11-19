@@ -536,7 +536,10 @@ impl ActorPath {
     pub fn via_tcp(&mut self) {
         self.set_protocol(Transport::Tcp);
     }
-
+    /// Sets the transport protocol for this actor path to Quic
+    pub fn via_quic(&mut self) {
+        self.set_protocol(Transport::Quic);
+    }
     /// Sets the transport protocol for this actor path to LOCAL
     pub fn via_local(&mut self) {
         self.set_protocol(Transport::Local);
