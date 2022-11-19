@@ -752,6 +752,7 @@ impl NetworkDispatcher {
             }
         }
     }
+
     fn route_remote_quic(
         &mut self,
         addr: SocketAddr,
@@ -778,9 +779,11 @@ impl NetworkDispatcher {
                 }
             }
             ConnectionState::Connected(_) => {
+                debug!(self.ctx.log(), "BEFORE IF STATEMENT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT {:?}", addr);
+
                 if self.queue_manager.has_data(&addr) {
                     self.queue_manager.enqueue_data(data, addr);
-
+                    debug!(self.ctx.log(), "CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT CONNECT {:?}", addr);
                     if let Some(bridge) = &self.net_bridge {
                         while let Some(queued_data) = self.queue_manager.pop_data(&addr) {
                             bridge.route(addr, queued_data, net::Protocol::Quic)?;
@@ -796,6 +799,8 @@ impl NetworkDispatcher {
                 }
             }
             ConnectionState::Initializing => {
+                debug!(self.ctx.log(), "INITIALIZE INITIALIZE INITIALIZE {:?}", addr);
+
                 self.queue_manager.enqueue_data(data, addr);
                 None
             }
@@ -803,7 +808,7 @@ impl NetworkDispatcher {
                 self.queue_manager.enqueue_data(data, addr);
                 if let Some(bridge) = &self.net_bridge {
                     self.retry_map.entry(addr).or_insert(0);
-                    bridge.connect(Tcp, addr)?;
+                    bridge.connect(Transport::Quic, addr)?;
                 }
                 Some(ConnectionState::Initializing)
             }

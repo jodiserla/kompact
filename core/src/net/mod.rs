@@ -339,7 +339,7 @@ impl Bridge {
                 Ok(())
             }
             Transport::Quic => {
-                print!("CONNECT QUIC PROTOCOL ");
+                print!("CONNECT QUIC PROTOCOL FROM NET MOD FILE STUFF ");
                 self.network_input_queue
                     .send(events::DispatchEvent::ConnectQuic(addr))?;
                 self.waker.wake()?;
