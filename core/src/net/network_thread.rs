@@ -205,7 +205,7 @@ impl NetworkThread {
                 .map(EventWithRetries::from)
                 .chain(self.retry_queue.split_off(0))
             {
-                info!(self.log, "Events from running networkThread {:?}", events);
+               // info!(self.log, "Events from running networkThread {:?}", events);
 
                 self.handle_event(event);
 
@@ -248,11 +248,11 @@ impl NetworkThread {
                 if let Some(mut endpoint) = self.endpoint.take(){
                     if let Some(mut udp_state) = self.udp_state.take(){
                         if event.writeable {
-                          //  print!("event is writeable ");
+                           //info!(self.log, "event is writeable ");
                             self.write_quic(&mut endpoint, &mut udp_state);
                         }
                         if event.readable {
-                           // print!("event is readable ");
+                            //info!(self.log, "event is readable ");
                             self.read_quic(&mut endpoint, &mut udp_state);
                         }
                         self.udp_state = Some(udp_state);
@@ -462,16 +462,24 @@ impl NetworkThread {
         }
     }
 
-   fn read_quic(&self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
+   fn read_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
+        info!(self.log, "read_quic");
         match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
             Ok(_) => {}
             Err(e) => {
                 warn!(self.log, "Error during QUIC reading: {}", e);
             }
         }
+        if let Some(ch) = endpoint.connection_handle {
+            self.recv_stream_quic(ch);
+        }
+        while let Some(net_message) = udp_state.incoming_messages.pop_front() {
+            println!("deliver_net_message");
+            self.deliver_net_message(net_message);
+        }
     }
    fn write_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
-        match endpoint.try_write_quic(Instant::now(), udp_state) {
+        match endpoint.try_write_quic(Instant::now(), udp_state, self.dispatcher_ref.clone()) {
             Ok(_) => {}
             Err(e) => {
                 warn!(self.log, "Error during QUIC writing: {}", e);
@@ -480,23 +488,23 @@ impl NetworkThread {
     }
 
     fn recv_stream_quic(&mut self, ch: ConnectionHandle) -> (){
+        info!(self.log, "recv_stream_quic");
         if let Some(mut endpoint) = self.endpoint.as_mut() {  
-            if let Some(mut stream_id) = endpoint.streams(ch).accept(Dir::Bi){
-                let mut bla = endpoint.recv(ch, stream_id);;
-                let mut chunks = bla.read(false).unwrap();
+            info!(self.log, "endpoint in recv_stream");
+            if let Some(stream_id) = endpoint.streams(ch).accept(Dir::Bi){
+                info!(self.log, "recv stream streamid {}", stream_id);
+                let mut receive = endpoint.recv(ch, stream_id);
+                let mut chunks = receive.read(false).unwrap();
                 trace!(self.log, "Read stream {:?}", chunks.next(10));
                 chunks.finalize();
             }
-
         }
     }
 
-    fn send_stream_quic(&mut self, ch: ConnectionHandle, data: &[u8]) -> () {
+    fn send_stream_quic(&mut self, ch: ConnectionHandle, data: &[u8], addr: SocketAddr) -> () {
         if let Some(mut endpoint) = self.endpoint.as_mut() {  
-            if let Some(mut stream_id) = endpoint.streams(ch).accept(Dir::Bi){
-                let bla = endpoint.send(ch, stream_id).write(data);
-                trace!(self.log, "send stream {:?}", &bla);
-
+            if let Some(mut stream_id) = endpoint.streams(ch).open(Dir::Bi){
+                endpoint.send(ch, stream_id).write(data);
             }
         }
     }
@@ -504,6 +512,7 @@ impl NetworkThread {
     fn initiate_handshake_quic(&mut self, address: SocketAddr) -> () {
         if let Some(mut endpoint) = self.endpoint.take() {
             if let Some(mut udp_state) = self.udp_state.take() {
+                trace!(self.log, "Requesting connection to {}", &address);
                 match endpoint.connect(address) {
                     Ok(_connection_handle) => {
                         self.write_quic(&mut endpoint, &mut udp_state);
@@ -641,15 +650,17 @@ impl NetworkThread {
     }
 
     fn send_quic_message(&mut self, address: SocketAddr, data: DispatchData) {
-        println!("WHAT IS DATA: {:?}", data);
+        info!(self.log, "send_quic_message");
         if let Some(mut endpoint) = self.endpoint.take() {
             if let Some(mut udp_state) = self.udp_state.take() {
-                println!("what is data: {:?}", data);
                 match self.serialise_dispatch_data(data) {
                     Ok(frame) => {
-                        info!(self.log, "what is frame: {:?}", frame);
+                        for (ch, _conn) in endpoint.connections.iter_mut() {
+                            info!(self.log, "SEND STREAM");
+                            self.send_stream_quic(*ch, frame.bytes(), address);
+                        }
                         udp_state.enqueue_serialised(address, frame);
-                        match endpoint.try_write_quic(Instant::now(), &mut udp_state) {
+                        match endpoint.try_write_quic(Instant::now(), &mut udp_state, self.dispatcher_ref.clone()) {
                             Ok(_) => { info!(self.log, "SEND QUIC MESSAGE") }
                             Err(e) => {
                                 warn!(self.log, "Error during UDP sending: {}", e);
@@ -681,6 +692,7 @@ impl NetworkThread {
             }
         }
     }
+
     fn handle_data_frame(&self, data: Data, session: SessionId) -> () {
         let buf = data.payload();
         let mut envelope = deserialise_chunk_lease(buf).expect("s11n errors");
@@ -689,6 +701,7 @@ impl NetworkThread {
     }
 
     fn deliver_net_message(&self, envelope: NetMessage) -> () {
+      //  info!(self.log, "deliver_net_message {:?}", envelope);
         let lease_lookup = self.lookup.load();
         match lease_lookup.get_by_actor_path(&envelope.receiver) {
             LookupResult::Ref(actor) => {

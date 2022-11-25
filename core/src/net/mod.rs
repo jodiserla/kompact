@@ -329,7 +329,6 @@ impl Bridge {
     /// # Errors
     /// If the provided protocol is not supported
     pub fn connect(&self, proto: Transport, addr: SocketAddr) -> Result<(), NetworkBridgeErr> {
-        println!("CONNECT FUNCTION IN NET MOD FILE CONNECT CONNCECT");
         match proto {
             Transport::Tcp => {
                 self.network_input_queue

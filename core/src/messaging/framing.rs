@@ -6,6 +6,7 @@ use crate::{
 };
 use bitfields::BitField;
 use bytes::{Buf, BufMut};
+use log::info;
 use std::{any::Any, convert::TryFrom, net::IpAddr};
 use uuid::Uuid;
 
@@ -394,7 +395,7 @@ impl Deserialiser<ActorPath> for ActorPath {
 
     fn deserialise(buf: &mut dyn Buf) -> Result<ActorPath, SerError> {
         let (header, system_path) = system_path_from_buf(buf)?;
-
+        println!("deserialise header {:?} system path {:?}", header, system_path);
         let path = match header.path_type {
             PathType::Unique => {
                 if buf.remaining() < 16 {

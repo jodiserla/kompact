@@ -341,15 +341,14 @@ fn remote_delivery_to_registered_actors_eager() {
     let ponger_system = system_from_network_config(NetworkConfig::default());
 
     let (ponger_unique, mut ponger_unique_path) = start_ponger(&ponger_system, PongerAct::new_eager());
-    // let (ponger_named, _) = start_ponger(&ponger_system, PongerAct::new_eager());
-    // let mut ponger_named_path = ponger_system
-    //     .register_by_alias(&ponger_named, "custom_name")
-    //     .wait_expect(REGISTRATION_TIMEOUT, "Ponger failed to register!");
+    let (ponger_named, _) = start_ponger(&ponger_system, PongerAct::new_eager());
+    let mut ponger_named_path = ponger_system
+        .register_by_alias(&ponger_named, "custom_name")
+        .wait_expect(REGISTRATION_TIMEOUT, "Ponger failed to register!");
 
     ponger_unique_path.set_protocol(Transport::Quic);
-    //ponger_named_path.set_protocol(Transport::Quic);
-    // ponger_named_path.via_quic();
-    //ponger_unique.via_quic();
+    ponger_named_path.set_protocol(Transport::Quic);
+
 
     let (pinger_unique, all_unique_pongs_received_future) =
         start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path));

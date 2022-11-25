@@ -439,7 +439,7 @@ impl NetworkDispatcher {
             next
         });
 
-        //self.schedule_retries();
+        self.schedule_retries();
     }
 
     fn start_bridge(&mut self, address: SocketAddr) -> () {
@@ -705,6 +705,7 @@ impl NetworkDispatcher {
     fn route_local(&mut self, dst: ActorPath, msg: DispatchData) -> () {
         let lookup = self.lookup.load();
         let lookup_result = lookup.get_by_actor_path(&dst);
+        println!("LOCAL ROUTE MSG {:?}", msg);
         match msg.into_local() {
             Ok(netmsg) => match lookup_result {
                 LookupResult::Ref(actor) => {
@@ -803,14 +804,7 @@ impl NetworkDispatcher {
                 self.queue_manager.enqueue_data(data, addr);
                 None
             }
-            ConnectionState::Blocked => {
-                warn!(
-                    self.ctx.log(),
-                    "Tried sending a message to a blocked connection: {:?}. Dropping message.",
-                    addr
-                );
-                None
-            }
+            ConnectionState::Blocked => todo!(),
         };
 
         if let Some(next) = next {
@@ -937,19 +931,25 @@ impl NetworkDispatcher {
             let proto = dst.system().protocol();
             match proto {
                 Transport::Local => {
+                    println!("ROUTE LOCAL");
+
                     self.route_local(dst, msg);
                     Ok(())
                 }
                 Transport::Tcp => {
+                    println!("!!!!!!!!!!!!!       ROUTE TCP !!1!!!!!!!!!!");
+
                     let addr = SocketAddr::new(*dst.address(), dst.port());
                     self.route_remote_tcp(addr, msg)
                 }
                 Transport::Udp => {
+                    println!("ROUTE UDP");
+
                     let addr = SocketAddr::new(*dst.address(), dst.port());
                     self.route_remote_udp(addr, msg)
                 }
                 Transport::Quic => {
-                    println!(" ROUTE REMOTE QUIC ");
+                    println!("!!!!!!!!!!!!!!      ROUTE QUIC       !!!!!!!!");
 
                     let addr = SocketAddr::new(*dst.address(), dst.port());
                     self.route_remote_quic(addr, msg)
@@ -1103,14 +1103,17 @@ impl Actor for NetworkDispatcher {
     type Message = DispatchEnvelope;
 
     fn receive_local(&mut self, msg: Self::Message) -> Handled {
+        println!("MSG MSG MSG MSG {:?}", msg);
         match msg {
             DispatchEnvelope::Msg { src: _, dst, msg } => {
+                print!("!!!!!!!!!N  RECEIVE LOCAL  FIRST !!!!!!!!!!");
                 if let Err(e) = self.route(dst, msg) {
                     error!(self.ctx.log(), "Failed to route message: {:?}", e);
                 };
             }
             DispatchEnvelope::ForwardedMsg { msg } => {
                 // Look up destination (local or remote), then route or err
+                print!("!!!!!!!!!N  RECEIVE LOCAL  SECOND !!!!!!!!!!");
                 if let Err(e) = self.route(msg.receiver.clone(), DispatchData::NetMessage(msg)) {
                     error!(self.ctx.log(), "Failed to route message: {:?}", e);
                 };

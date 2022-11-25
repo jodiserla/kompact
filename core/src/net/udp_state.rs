@@ -1,12 +1,13 @@
-use super::*;
+use super::{*, buffers::ChunkLease};
 use crate::{
     messaging::{NetMessage, SerialisedFrame},
     net::buffers::{BufferChunk, BufferPool, DecodeBuffer, decode_buffer},
 };
+use bytes::{Bytes, BufMut, BytesMut};
 use mio::net::UdpSocket;
 use network_thread::*;
 use quinn_proto::Transmit;
-use std::{cell::RefCell, cmp::min, collections::VecDeque, io, io::Error, net::SocketAddr};
+use std::{cell::RefCell, cmp::min, collections::VecDeque, io, io::Error, net::SocketAddr, convert::TryInto};
 
 // Note that this is a theoretical IPv4 limit.
 // This may be violated with IPv6 jumbograms.
@@ -108,10 +109,7 @@ impl UdpState {
                         return Ok((0, addr));
                     }
                     Ok((n, addr)) => {
-                        //println!("n received {:?}", n);
-                       // self.input_buffer.read_chunk_lease(n);
                         self.input_buffer.advance_writeable(n);
-                        //self.decode_message(addr);
                         return Ok((n, addr));
                     }
                     Err(err) if would_block(&err) => {
@@ -136,8 +134,20 @@ impl UdpState {
         }
     }
 
+    pub fn decode_quic_message(&mut self, source: SocketAddr, buf: Bytes) {
+        match ser_helpers::deserialise_bytes(buf) {
+            Ok(envelope) => self.incoming_messages.push_back(envelope),
+            Err(e) => {
+                warn!(
+                    self.logger,
+                    "Could not deserialise Quic messages from {}: {}", source, e
+                );
+            }
+        }
+    }
+
     fn decode_message(&mut self, source: SocketAddr) {
-       // println!("print input buffer get frame {:?}", self.input_buffer.get_frame());
+        println!("print input buffer get frame {:?}", self.input_buffer.get_frame());
         match self.input_buffer.get_frame() {
             Ok(Frame::Data(frame)) => {
                 use serialisation::ser_helpers::deserialise_chunk_lease;
@@ -157,12 +167,6 @@ impl UdpState {
                     self.logger,
                     "Decoded unexpected frame from UDP datagram from {}: {:?}", source, frame
                 );
-            }
-            Err(FramingError::InvalidMagicNum(message)) => {
-                let len = message.1.len();
-                let chunklease = DecodeBuffer::read_chunk_lease(&mut self.input_buffer, len);
-                println!("chunklease {:?}", chunklease);
-
             }
             Err(e) => {
                 warn!(
