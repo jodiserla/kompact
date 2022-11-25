@@ -134,18 +134,6 @@ impl UdpState {
         }
     }
 
-    pub fn decode_quic_message(&mut self, source: SocketAddr, buf: Bytes) {
-        match ser_helpers::deserialise_bytes(buf) {
-            Ok(envelope) => self.incoming_messages.push_back(envelope),
-            Err(e) => {
-                warn!(
-                    self.logger,
-                    "Could not deserialise Quic messages from {}: {}", source, e
-                );
-            }
-        }
-    }
-
     fn decode_message(&mut self, source: SocketAddr) {
         println!("print input buffer get frame {:?}", self.input_buffer.get_frame());
         match self.input_buffer.get_frame() {

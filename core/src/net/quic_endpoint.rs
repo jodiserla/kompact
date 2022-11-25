@@ -1,6 +1,6 @@
 use async_std::fs::write;
 use async_std::stream;
-use bytes::{BytesMut, BufMut};
+use bytes::{BytesMut, BufMut, Bytes};
 use tracing::dispatcher;
 use tracing::log::logger;
 use uuid::Variant;
@@ -172,7 +172,7 @@ impl QuicEndpoint {
                     self.process_quic_events(ch, dispatcher_ref, addr, udp_state);
                 }
 
-                udp_state.decode_quic_message(addr, buffer.into());
+                self.decode_quic_message(addr, buffer.into());
                 return Ok(());
             }
             Err(err) => {
@@ -284,4 +284,18 @@ impl QuicEndpoint {
             }
         }
     }
+
+    pub fn decode_quic_message(&mut self, source: SocketAddr, buf: Bytes) {
+        match ser_helpers::deserialise_bytes(buf) {
+            Ok(envelope) => {
+                self.incoming_messages.push_back(envelope)
+            }
+            Err(e) => {
+                eprint!(
+                    "Could not deserialise Quic messages from {}: {}", source, e
+                );
+            }
+        }
+    }
+
 }
