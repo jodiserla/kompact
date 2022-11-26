@@ -297,7 +297,6 @@ impl NetworkThread {
 
     fn receive_dispatch(&mut self) {
         while let Ok(event) = self.input_queue.try_recv() {
-            println!("EVENT FROM RECEIVE DISPATCH {:?} ", event);
             self.handle_dispatch_event(event);
         }
     }

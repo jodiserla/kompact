@@ -1,19 +1,19 @@
 use async_std::fs::write;
 use async_std::stream;
-use bytes::{BytesMut, BufMut, Bytes};
+use bytes::{BytesMut, BufMut, Bytes, Buf};
 use tracing::dispatcher;
 use tracing::log::logger;
 use uuid::Variant;
 use super::*;
 use quinn_proto::{
-    EcnCodepoint, 
-    ConnectionHandle, 
-    Connection, 
+    EcnCodepoint,
+    ConnectionHandle,
+    Connection,
     DatagramEvent,
     EndpointEvent,
-    ConnectionEvent, 
-    Transmit, 
-    Endpoint, 
+    ConnectionEvent,
+    Transmit,
+    Endpoint,
     Streams, SendStream, RecvStream, Datagrams, Dir, Event, StreamId,
 };
 use quinn_proto::StreamEvent::*;
@@ -35,7 +35,7 @@ use std::{
     collections::VecDeque,
     collections::HashMap,
     sync::{Arc},
-    time::Instant, 
+    time::Instant,
     net::{SocketAddr}, cell::RefCell,
 };
 
@@ -45,6 +45,7 @@ pub struct QuicEndpoint {
     pub endpoint: Endpoint,
     pub addr: SocketAddr,
     timeout: Option<Instant>,
+    inbound: VecDeque<(SerialisedFrame)>,
     pub accepted: Option<ConnectionHandle>,
     pub connections: HashMap<ConnectionHandle, Connection>,
     pub connection_handle: Option<ConnectionHandle>,
@@ -54,21 +55,20 @@ pub struct QuicEndpoint {
 }
 
 impl QuicEndpoint {
-    pub fn new(endpoint: Endpoint, 
-                addr: SocketAddr, 
+    pub fn new(endpoint: Endpoint,
+                addr: SocketAddr,
                // socket: UdpSocket
-            ) -> Self {          
+            ) -> Self {
         Self {
             endpoint,
             addr: addr,
             timeout: None,
-            //outbound: VecDeque::new(),
+            inbound: VecDeque::new(),
             connection_handle: None,
             accepted: None,
             connections: HashMap::default(),
             conn_events: HashMap::default(),
             incoming_messages: VecDeque::new(),
-
         }
     }
     pub fn conn_mut(&mut self, ch: ConnectionHandle) -> &mut Connection {
@@ -93,7 +93,7 @@ impl QuicEndpoint {
             .endpoint
             .connect(quic_config::client_config(), remote, "localhost")
             .unwrap();
-        self.connections.insert(client_ch, client_conn);       
+        self.connections.insert(client_ch, client_conn);
         self.connection_handle = Some(client_ch);
         Ok(client_ch)
     }
@@ -135,14 +135,15 @@ impl QuicEndpoint {
                 }
             }
         }
-        match udp_state.try_write() {
-            Ok(_) => {},
-            // Other errors we'll consider fatal.
-            Err(err) => {
-            }
-        }
+
+        // match udp_state.try_write() {
+        //     Ok(_) => {},
+        //     // Other errors we'll consider fatal.
+        //     Err(err) => {
+        //     }
+        // }
     }
-    pub(super) fn try_read_quic(&mut self, now: Instant, udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>, dispatcher_ref: DispatcherRef) -> io::Result<()> { 
+    pub(super) fn try_read_quic(&mut self, now: Instant, udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>, dispatcher_ref: DispatcherRef) -> io::Result<()> {
         //consume icoming packets and connection-generated events via handle and handle_event
         match udp_state.try_read(buffer_pool) {
             Ok((n, addr)) => {
@@ -165,15 +166,16 @@ impl QuicEndpoint {
                             .push_back(event);
                         }
                     }
-                }
-                self.drive(now, udp_state);
-
-                if let Some(mut ch) = self.connection_handle {
                     self.process_quic_events(ch, dispatcher_ref, addr, udp_state);
                 }
 
-                self.decode_quic_message(addr, buffer.into());
-                return Ok(());
+                self.drive(now, udp_state);
+
+                for (x, frame) in udp_state.outbound_queue.drain(..) {
+                    self.decode_quic_message(addr, Bytes::copy_from_slice(frame.bytes()));
+                }
+
+                return Ok(self.drive(now, udp_state));
             }
             Err(err) => {
                 return Err(err);
@@ -182,16 +184,7 @@ impl QuicEndpoint {
     }
 
     pub(super) fn try_write_quic(&mut self, now: Instant, udp_state: &mut UdpState, dispatcher_ref: DispatcherRef) -> io::Result<()>{
-        print!("try_write_quic");
-        if let Some(ch) = self.connection_handle {
-            println!("some ch in try_write_quic");
-            while let Some(x) = self.conn_mut(ch).poll_transmit(now, MAX_DATAGRAMS) {
-                println!("some transmit in try_write_quic");
-                self.process_quic_events(ch, dispatcher_ref.clone(), x.destination, udp_state);
-                udp_state.outbound_queue.push_back((x.destination, SerialisedFrame::Vec(x.contents)));
-            }            
-        }
-        self.drive(now, udp_state);
+       self.drive(now, udp_state);
 
         match udp_state.try_write(){
             Ok(_) => Ok({}),
@@ -199,7 +192,6 @@ impl QuicEndpoint {
                 return Err(err);
             },
         }
-
     }
 
     pub(super) fn process_quic_events(&mut self, ch: ConnectionHandle, dispatcher_ref: DispatcherRef, addr: SocketAddr, udp_state: &mut UdpState) {
@@ -240,9 +232,11 @@ impl QuicEndpoint {
                                 match ser_helpers::deserialise_bytes(chunk.bytes) {
                                     Ok(envelope) => udp_state.incoming_messages.push_back(envelope),
                                     Err(e) => {
-                        
+
                                     }
                                 }
+                                //TODO call this method if anything finally works in here
+                               // self.decode_quic_message(addr, chunk.bytes)
                             }
                             Ok(None) => {
                                 println!("NO CHUNKS FROM READ STREAD");
@@ -291,7 +285,7 @@ impl QuicEndpoint {
                 self.incoming_messages.push_back(envelope)
             }
             Err(e) => {
-                eprint!(
+                print!(
                     "Could not deserialise Quic messages from {}: {}", source, e
                 );
             }
