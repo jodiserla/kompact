@@ -138,6 +138,8 @@ impl SystemPathHeader {
             ActorPath::Named(_) => PathType::Named,
         };
         let address_type: AddressType = sys.address().into();
+        print!("address_type {:?}", address_type);
+        print!("SYSA {:?}", sys);
 
         let mut storage = [0u8];
         storage
@@ -164,7 +166,8 @@ impl SystemPathHeader {
 
         let path_type = PathType::Unique; // doesn't matter, will be ignored anyway
         let address_type: AddressType = sys.address().into();
-
+        print!("address_type from system {:?}", address_type);
+        print!("SYS from system {:?}", sys);
         let mut storage = [0u8];
         storage
             .store(path_type)
@@ -200,6 +203,7 @@ impl TryFrom<u8> for SystemPathHeader {
         let path_type = storage
             .get_as::<PathType>()
             .map_err(|_| SerError::InvalidData("System Path could not be read.".to_owned()))?;
+        println!("VALUE VALUE VLAUE {:?} {:?}", storage.get_as::<Transport>(), path_type);
         let protocol = storage.get_as::<Transport>().map_err(|_| {
             SerError::InvalidData("System Path Transport could not be read.".to_owned())
         })?;
@@ -288,10 +292,14 @@ fn system_path_put_into_buf(path: &SystemPath, buf: &mut dyn BufMut) -> () {
 #[inline(always)]
 fn system_path_from_buf(buf: &mut dyn Buf) -> Result<(SystemPathHeader, SystemPath), SerError> {
     // Deserialize system path
+    println!("system_path_from_buf");
     let fields: u8 = buf.get_u8();
     let header = SystemPathHeader::try_from(fields)?;
+    println!("systempath header {:?}", header);
     let address: IpAddr = match header.address_type {
         AddressType::IPv4 => {
+            println!("addres type ipv4");
+
             if buf.remaining() < 4 {
                 return Err(SerError::InvalidData(
                     "Could not parse 4 bytes for IPv4 address".into(),
@@ -303,6 +311,8 @@ fn system_path_from_buf(buf: &mut dyn Buf) -> Result<(SystemPathHeader, SystemPa
             }
         }
         AddressType::IPv6 => {
+            println!("addres type ipv6");
+
             if buf.remaining() < 16 {
                 return Err(SerError::InvalidData(
                     "Could not parse 16 bytes for IPv6 address".into(),
@@ -318,6 +328,8 @@ fn system_path_from_buf(buf: &mut dyn Buf) -> Result<(SystemPathHeader, SystemPa
         }
     };
     let port = buf.get_u16();
+    println!("port {:?}", port);
+
     let system_path = SystemPath::new(header.protocol, address, port);
     Ok((header, system_path))
 }
@@ -394,6 +406,7 @@ impl Deserialiser<ActorPath> for ActorPath {
     const SER_ID: SerId = serialisation_ids::ACTOR_PATH;
 
     fn deserialise(buf: &mut dyn Buf) -> Result<ActorPath, SerError> {
+        println!("deserialise");
         let (header, system_path) = system_path_from_buf(buf)?;
         println!("deserialise header {:?} system path {:?}", header, system_path);
         let path = match header.path_type {
@@ -411,6 +424,8 @@ impl Deserialiser<ActorPath> for ActorPath {
             }
             PathType::Named => {
                 let name_len = buf.get_u16() as usize;
+                println!("name_len {:?}", name_len);
+                println!("buf.remaining {:?}", buf.remaining());
                 if buf.remaining() < name_len {
                     return Err(SerError::InvalidData(format!(
                         "Could not get {} bytes for path name",

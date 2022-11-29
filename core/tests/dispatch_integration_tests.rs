@@ -352,39 +352,39 @@ fn remote_delivery_to_registered_actors_eager() {
 
     let (pinger_unique, all_unique_pongs_received_future) =
         start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path));
-    // let (pinger_named, all_named_pongs_received_future) =
-    //     start_pinger(&pinger_system, PingerAct::new_eager(ponger_named_path));
+    let (pinger_named, all_named_pongs_received_future) =
+        start_pinger(&pinger_system, PingerAct::new_eager(ponger_named_path));
 
     all_unique_pongs_received_future
         .wait_timeout(PINGPONG_TIMEOUT)
         .expect("Time out waiting for ping pong to complete");
-    // all_named_pongs_received_future
-    //     .wait_timeout(PINGPONG_TIMEOUT)
-    //     .expect("Time out waiting for ping pong to complete");
+    all_named_pongs_received_future
+        .wait_timeout(PINGPONG_TIMEOUT)
+        .expect("Time out waiting for ping pong to complete");
 
     pinger_system
         .stop_notify(&pinger_unique)
         .wait_timeout(STOP_COMPONENT_TIMEOUT)
         .expect("Pinger never stopped!");
-    // pinger_system
-    //     .stop_notify(&pinger_named)
-    //     .wait_timeout(STOP_COMPONENT_TIMEOUT)
-    //     .expect("Ponger never died!");
+    pinger_system
+        .stop_notify(&pinger_named)
+        .wait_timeout(STOP_COMPONENT_TIMEOUT)
+        .expect("Ponger never died!");
     ponger_system
         .kill_notify(ponger_unique)
         .wait_timeout(STOP_COMPONENT_TIMEOUT)
         .expect("Pinger never stopped!");
-    // ponger_system
-    //     .kill_notify(ponger_named)
-    //     .wait_timeout(STOP_COMPONENT_TIMEOUT)
-    //     .expect("Ponger never died!");
+    ponger_system
+        .kill_notify(ponger_named)
+        .wait_timeout(STOP_COMPONENT_TIMEOUT)
+        .expect("Ponger never died!");
 
     pinger_unique.on_definition(|c| {
         assert_eq!(c.count, PING_COUNT);
     });
-    // pinger_named.on_definition(|c| {
-    //     assert_eq!(c.count, PING_COUNT);
-    // });
+    pinger_named.on_definition(|c| {
+        assert_eq!(c.count, PING_COUNT);
+    });
 
     pinger_system
         .shutdown()

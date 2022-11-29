@@ -51,6 +51,8 @@ impl UdpState {
         let mut interrupts = 0;
         while let Some((addr, mut frame)) = self.outbound_queue.pop_front() {
             frame.make_contiguous();
+             let bla =  frame.bytes().to_vec();
+            // println!("BYTES WRITE {:?}", bla);
             match self.socket.send_to(frame.bytes(), addr) {
                 Ok(n) => {
                     // This really shouldn't happen, and can lead to inconsistent network messages
@@ -135,7 +137,6 @@ impl UdpState {
     }
 
     fn decode_message(&mut self, source: SocketAddr) {
-        println!("print input buffer get frame {:?}", self.input_buffer.get_frame());
         match self.input_buffer.get_frame() {
             Ok(Frame::Data(frame)) => {
                 use serialisation::ser_helpers::deserialise_chunk_lease;

@@ -265,9 +265,11 @@ impl NetworkThread {
             }
             _ => {
                 if event.writeable {
+                    println!("write tcp in network thread ");
                     self.write_tcp(&event.token);
                 }
                 if event.readable {
+                    println!("read tcp in network thread ");
                     self.read_tcp(&event);
                 }
             }
@@ -464,13 +466,16 @@ impl NetworkThread {
    fn read_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
         info!(self.log, "read_quic");
         match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
-            Ok(_) => {}
+            Ok(_) => {
+            //TODO check if connected first
+            // if let Some(ch) = endpoint.conn_mut(ch). {
+            //     info!(self.log, "RECEIVE STREAM");
+            //     self.recv_stream_quic(*ch);
+            // }
+            }
             Err(e) => {
                 warn!(self.log, "Error during QUIC reading: {}", e);
             }
-        }
-        if let Some(ch) = endpoint.connection_handle {
-            self.recv_stream_quic(ch);
         }
         while let Some(net_message) = udp_state.incoming_messages.pop_front() {
             println!("deliver_net_message");
@@ -488,7 +493,7 @@ impl NetworkThread {
 
     fn recv_stream_quic(&mut self, ch: ConnectionHandle) -> (){
         info!(self.log, "recv_stream_quic");
-        if let Some(mut endpoint) = self.endpoint.as_mut() {  
+        if let Some(mut endpoint) = self.endpoint.take() {  
             info!(self.log, "endpoint in recv_stream");
             if let Some(stream_id) = endpoint.streams(ch).accept(Dir::Bi){
                 info!(self.log, "recv stream streamid {}", stream_id);
@@ -497,12 +502,14 @@ impl NetworkThread {
                 trace!(self.log, "Read stream {:?}", chunks.next(10));
                 chunks.finalize();
             }
+            self.endpoint = Some(endpoint)
         }
     }
 
-    fn send_stream_quic(&mut self, ch: ConnectionHandle, data: &[u8], addr: SocketAddr) -> () {
-        if let Some(mut endpoint) = self.endpoint.as_mut() {  
+    fn send_stream_quic(&mut self, data: &[u8], addr: SocketAddr, endpoint: &mut QuicEndpoint) -> () {
+        if let Some(mut ch) = endpoint.connection_handle.take() {  
             if let Some(mut stream_id) = endpoint.streams(ch).open(Dir::Bi){
+                info!(self.log, "send_stream_quic function {:?}", ch);
                 endpoint.send(ch, stream_id).write(data);
             }
         }
@@ -527,7 +534,6 @@ impl NetworkThread {
                 } 
                 self.udp_state = Some(udp_state);
             }
-
             self.endpoint = Some(endpoint);
         }
     }
@@ -654,10 +660,10 @@ impl NetworkThread {
             if let Some(mut udp_state) = self.udp_state.take() {
                 match self.serialise_dispatch_data(data) {
                     Ok(frame) => {
-                        for (ch, _conn) in endpoint.connections.iter_mut() {
-                            info!(self.log, "SEND STREAM");
-                            self.send_stream_quic(*ch, frame.bytes(), address);
-                        }
+                        //for (ch, _conn) in endpoint.connections.iter_mut() {
+                        info!(self.log, "SEND STREAM frame byte length {:?}", frame.bytes().len());
+                        self.send_stream_quic(frame.bytes(), address, &mut endpoint);
+                        //}
                         udp_state.enqueue_serialised(address, frame);
                         match endpoint.try_write_quic(Instant::now(), &mut udp_state, self.dispatcher_ref.clone()) {
                             Ok(_) => { info!(self.log, "SEND QUIC MESSAGE") }

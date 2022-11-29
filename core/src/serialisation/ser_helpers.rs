@@ -270,6 +270,7 @@ pub fn deserialise_chunk_ref(mut buffer: ChunkRef) -> Result<NetMessage, SerErro
 ///
 /// This expects the format from [serialise_msg](serialise_msg).
 pub fn deserialise_bytes(mut buffer: Bytes) -> Result<NetMessage, SerError> {
+    println!("deserialise_bytes");
     let src = ActorPath::deserialise(&mut buffer)?;
     let dst = ActorPath::deserialise(&mut buffer)?;
     let ser_id = buffer.get_ser_id();

@@ -412,10 +412,20 @@ impl NetworkDispatcher {
     /// Mutable, since it will update the cached value, if necessary.
     pub fn system_path_ref(&mut self) -> &SystemPath {
         match self.system_path {
-            Some(ref path) => path,
+            Some(ref path) => {
+                debug!(
+                    self.ctx().log(),
+                    "SYSTEM PATH SYSTEM PATH SOME SOME {:?}", path
+                );
+                path
+            }
             None => {
                 let _ = self.system_path(); // just to fill the cache
                 if let Some(ref path) = self.system_path {
+                    debug!(
+                        self.ctx().log(),
+                        "SYSTEM PATH SYSTEM PATH {:?}", path
+                    );
                     path
                 } else {
                     unreachable!(
@@ -743,6 +753,8 @@ impl NetworkDispatcher {
         addr: SocketAddr,
         data: DispatchData,
     ) -> Result<(), NetworkBridgeErr> {
+        println!("ROUTE REMOTE QUIC");
+
         let state: &mut ConnectionState =
             self.connections.entry(addr).or_insert(ConnectionState::New);
         let next: Option<ConnectionState> = match *state {
@@ -834,6 +846,7 @@ impl NetworkDispatcher {
         addr: SocketAddr,
         data: DispatchData,
     ) -> Result<(), NetworkBridgeErr> {
+        println!("route_remote_tcp");
         let state: &mut ConnectionState =
             self.connections.entry(addr).or_insert(ConnectionState::New);
         let next: Option<ConnectionState> = match *state {
@@ -929,6 +942,10 @@ impl NetworkDispatcher {
             Ok(())
         } else {
             let proto = dst.system().protocol();
+            debug!(
+                self.ctx().log(),
+                "ROUTE FUNCTION PROTO {:?}", proto
+            );
             match proto {
                 Transport::Local => {
                     println!("ROUTE LOCAL");
@@ -937,8 +954,6 @@ impl NetworkDispatcher {
                     Ok(())
                 }
                 Transport::Tcp => {
-                    println!("!!!!!!!!!!!!!       ROUTE TCP !!1!!!!!!!!!!");
-
                     let addr = SocketAddr::new(*dst.address(), dst.port());
                     self.route_remote_tcp(addr, msg)
                 }
@@ -949,8 +964,6 @@ impl NetworkDispatcher {
                     self.route_remote_udp(addr, msg)
                 }
                 Transport::Quic => {
-                    println!("!!!!!!!!!!!!!!      ROUTE QUIC       !!!!!!!!");
-
                     let addr = SocketAddr::new(*dst.address(), dst.port());
                     self.route_remote_quic(addr, msg)
                 }
