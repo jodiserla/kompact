@@ -271,7 +271,7 @@ impl QuicEndpoint {
 
                         match chunks.next(usize::MAX){
                            //TODO insert chunks in queue then feed them into ser_helpers function
-                           Ok(Some(chunk)) => {
+                           Ok(Some(mut chunk)) => {
                                 inbound.push_back(chunk.bytes);
                             }
                             Ok(None) => {
@@ -279,11 +279,14 @@ impl QuicEndpoint {
 
                             }
                             Err(_) => todo!(),
+
                         }
+                        chunks.finalize();
                     }
                     println!("inbound.len() {:?}", inbound.len());
 
-                    for byte in inbound.drain(..){
+                    for mut byte in inbound.drain(..){
+                        byte.advance(FRAME_HEAD_LEN as usize);
                         self.decode_quic_message(self.addr, byte);
                         //println!("byte {:?}", byte.get_u16_le());
                     }
