@@ -211,6 +211,10 @@ impl QuicEndpoint {
 
                 //println!("BEFORE DRIVE AGAIN");
                 //println!("AFTER DRIVE AGAIN");
+                if let Some(ch) = self.accepted.take() {
+                    self.process_quic_events(ch, dispatcher_ref.clone(), udp_state);
+                    self.accepted = Some(ch);
+                }
 
 
                 match udp_state.try_write() {
@@ -268,11 +272,13 @@ impl QuicEndpoint {
                     if let Some(mut stream_id) = self.streams(ch).accept(Dir::Bi){
                         let mut receive = self.recv(ch, stream_id);
                         let mut chunks = receive.read(false).unwrap();
-
                         match chunks.next(usize::MAX){
                            //TODO insert chunks in queue then feed them into ser_helpers function
-                           Ok(Some(mut chunk)) => {
+                           Ok(Some(chunk)) => {
+                               println!("chunks offset {:?}", chunk.offset);
+                               if(chunk.offset == 0) {
                                 inbound.push_back(chunk.bytes);
+                               }
                             }
                             Ok(None) => {
                                 println!("stream is finished");
@@ -283,12 +289,14 @@ impl QuicEndpoint {
                         }
                         chunks.finalize();
                     }
-                    println!("inbound.len() {:?}", inbound.len());
 
                     for mut byte in inbound.drain(..){
+                        let cnt = byte.len();
+                        println!("self byte.to_vec() {:?} {:?}", cnt, byte.to_vec());
+                        println!("remaining {:?}", byte.remaining());
                         byte.advance(FRAME_HEAD_LEN as usize);
+                        println!("ADVANCE WRITEABLE {:?}", byte.to_vec().len());
                         self.decode_quic_message(self.addr, byte);
-                        //println!("byte {:?}", byte.get_u16_le());
                     }
                 }
                 Event::Stream(Opened { dir: Dir::Uni}) => {
@@ -332,6 +340,7 @@ impl QuicEndpoint {
     pub fn decode_quic_message(&mut self, source: SocketAddr, buf: Bytes) {
         match ser_helpers::deserialise_bytes(buf) {
             Ok(envelope) => {
+                println!("envelope from decode_quic_message");
                 self.incoming_messages.push_back(envelope)
             }
             Err(e) => {

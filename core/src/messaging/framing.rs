@@ -103,6 +103,7 @@ impl TryFrom<u8> for Transport {
             x if x == Transport::Local as u8 => Ok(Transport::Local),
             x if x == Transport::Udp as u8 => Ok(Transport::Udp),
             x if x == Transport::Tcp as u8 => Ok(Transport::Tcp),
+            x if x == Transport::Quic as u8 => Ok(Transport::Quic),
             _ => Err(SerError::InvalidType(
                 "Unsupported transport protocol".into(),
             )),

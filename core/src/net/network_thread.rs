@@ -466,18 +466,12 @@ impl NetworkThread {
    fn read_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
         info!(self.log, "read_quic");
         match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
-            Ok(_) => {
-            //TODO check if connected first
-            // if let Some(ch) = endpoint.conn_mut(ch). {
-            //     info!(self.log, "RECEIVE STREAM");
-            //     self.recv_stream_quic(*ch);
-            // }
-            }
+            Ok(_) => {}
             Err(e) => {
                 warn!(self.log, "Error during QUIC reading: {}", e);
             }
         }
-        while let Some(net_message) = udp_state.incoming_messages.pop_front() {
+        while let Some(net_message) = endpoint.incoming_messages.pop_front() {
             println!("deliver_net_message");
             self.deliver_net_message(net_message);
         }
@@ -661,10 +655,11 @@ impl NetworkThread {
                 match self.serialise_dispatch_data(data) {
                     Ok(frame) => {
                         //for (ch, _conn) in endpoint.connections.iter_mut() {
-                        info!(self.log, "SEND STREAM frame byte length {:?}", frame.bytes().len());
+                        info!(self.log, "SEND STREAM frame byte  {:?}", frame.bytes());
+                        info!(self.log, "SEND STREAM frame byte len  {:?}", frame.bytes().len());
                         self.send_stream_quic(frame.bytes(), address, &mut endpoint);
                         //}
-                        udp_state.enqueue_serialised(address, frame);
+                       // udp_state.enqueue_serialised(address, frame);
                         match endpoint.try_write_quic(Instant::now(), &mut udp_state, self.dispatcher_ref.clone()) {
                             Ok(_) => { info!(self.log, "SEND QUIC MESSAGE") }
                             Err(e) => {

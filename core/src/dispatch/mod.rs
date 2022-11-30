@@ -964,6 +964,8 @@ impl NetworkDispatcher {
                     self.route_remote_udp(addr, msg)
                 }
                 Transport::Quic => {
+                    println!("ROUTE QUIC");
+
                     let addr = SocketAddr::new(*dst.address(), dst.port());
                     self.route_remote_quic(addr, msg)
                 }
