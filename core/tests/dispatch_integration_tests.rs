@@ -351,7 +351,7 @@ fn remote_delivery_to_registered_actors_eager() {
 
 
     let (pinger_unique, all_unique_pongs_received_future) =
-        start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path));
+         start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path));
     let (pinger_named, all_named_pongs_received_future) =
         start_pinger(&pinger_system, PingerAct::new_eager(ponger_named_path));
 

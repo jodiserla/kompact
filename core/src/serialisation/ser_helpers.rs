@@ -127,7 +127,6 @@ where
     buf.get_chunk_lease().map(|mut chunk_lease| {
         let len = chunk_lease.capacity() - FRAME_HEAD_LEN as usize; // The Data portion of the Full frame.
         chunk_lease.insert_head(FrameHead::new(FrameType::Data, len));
-        println!("CHUNKLEASE INSERT HEAD");
         assert_eq!(
             chunk_lease.capacity(),
             len + FRAME_HEAD_LEN as usize,
@@ -271,17 +270,11 @@ pub fn deserialise_chunk_ref(mut buffer: ChunkRef) -> Result<NetMessage, SerErro
 ///
 /// This expects the format from [serialise_msg](serialise_msg).
 pub fn deserialise_bytes(mut buffer: Bytes) -> Result<NetMessage, SerError> {
-    println!("deserialise_bytes");
     let src = ActorPath::deserialise(&mut buffer)?;
-    println!("SRC SRC {:?}", src);
     let dst = ActorPath::deserialise(&mut buffer)?;
-    println!("DST DST  {:?}", dst);
-
-
 
     let ser_id = buffer.get_ser_id();
 
     let envelope = NetMessage::with_bytes(ser_id, src, dst, buffer);
-    println!("ENVElOPE {:?}", envelope);
     Ok(envelope)
 }

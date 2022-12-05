@@ -141,7 +141,7 @@ impl NetworkThreadBuilder {
         let udp_state = UdpState::new(udp_socket, udp_buffer, logger.clone(), &self.network_config);
 
         let endpoint_config = Endpoint::new(Default::default(), Some(Arc::new(quic_config::server_config().clone())));
-        let endpoint = QuicEndpoint::new(endpoint_config, actual_addr);
+        let endpoint = QuicEndpoint::new(endpoint_config, actual_addr, logger.clone());
 
         NetworkThread {
             log: logger,
@@ -464,7 +464,6 @@ impl NetworkThread {
     }
 
    fn read_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
-        info!(self.log, "read_quic");
         match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
             Ok(_) => {}
             Err(e) => {
@@ -472,7 +471,6 @@ impl NetworkThread {
             }
         }
         while let Some(net_message) = endpoint.incoming_messages.pop_front() {
-            println!("deliver_net_message");
             self.deliver_net_message(net_message);
         }
     }
@@ -485,26 +483,12 @@ impl NetworkThread {
         }
     }
 
-    fn recv_stream_quic(&mut self, ch: ConnectionHandle) -> (){
-        info!(self.log, "recv_stream_quic");
-        if let Some(mut endpoint) = self.endpoint.take() {  
-            info!(self.log, "endpoint in recv_stream");
-            if let Some(stream_id) = endpoint.streams(ch).accept(Dir::Bi){
-                info!(self.log, "recv stream streamid {}", stream_id);
-                let mut receive = endpoint.recv(ch, stream_id);
-                let mut chunks = receive.read(false).unwrap();
-                trace!(self.log, "Read stream {:?}", chunks.next(10));
-                chunks.finalize();
+    fn send_stream_quic(&mut self, data: &[u8], endpoint: &mut QuicEndpoint) -> () {
+        match endpoint.send_stream_quic(data) {
+            Ok(_) => { 
             }
-            self.endpoint = Some(endpoint)
-        }
-    }
-
-    fn send_stream_quic(&mut self, data: &[u8], addr: SocketAddr, endpoint: &mut QuicEndpoint) -> () {
-        if let Some(mut ch) = endpoint.connection_handle.take() {  
-            if let Some(mut stream_id) = endpoint.streams(ch).open(Dir::Bi){
-                info!(self.log, "send_stream_quic function {:?}", ch);
-                endpoint.send(ch, stream_id).write(data);
+            Err(e) => {
+                warn!(self.log, "Error during stream sending: {}", e);
             }
         }
     }
@@ -649,19 +633,13 @@ impl NetworkThread {
     }
 
     fn send_quic_message(&mut self, address: SocketAddr, data: DispatchData) {
-        info!(self.log, "send_quic_message");
         if let Some(mut endpoint) = self.endpoint.take() {
             if let Some(mut udp_state) = self.udp_state.take() {
                 match self.serialise_dispatch_data(data) {
                     Ok(frame) => {
-                        //for (ch, _conn) in endpoint.connections.iter_mut() {
-                        info!(self.log, "SEND STREAM frame byte  {:?}", frame.bytes());
-                        info!(self.log, "SEND STREAM frame byte len  {:?}", frame.bytes().len());
-                        self.send_stream_quic(frame.bytes(), address, &mut endpoint);
-                        //}
-                       // udp_state.enqueue_serialised(address, frame);
+                        self.send_stream_quic(frame.bytes(), &mut endpoint);
                         match endpoint.try_write_quic(Instant::now(), &mut udp_state, self.dispatcher_ref.clone()) {
-                            Ok(_) => { info!(self.log, "SEND QUIC MESSAGE") }
+                            Ok(_) => {}
                             Err(e) => {
                                 warn!(self.log, "Error during UDP sending: {}", e);
                                 debug!(self.log, "UDP error debug info: {:?}", e);
@@ -681,7 +659,6 @@ impl NetworkThread {
                     }
                 }
                 self.udp_state = Some(udp_state);
-                self.endpoint = Some(endpoint);
             } else {
                 self.reject_dispatch_data(address, data);
                 trace!(
@@ -690,6 +667,7 @@ impl NetworkThread {
                     address
                 );
             }
+            self.endpoint = Some(endpoint);
         }
     }
 
@@ -708,6 +686,7 @@ impl NetworkThread {
                 actor.enqueue(envelope);
             }
             LookupResult::Group(group) => {
+                info!(self.log, "group route");
                 group.route(envelope, &self.log);
             }
             LookupResult::None => {
