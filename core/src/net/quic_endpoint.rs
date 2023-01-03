@@ -1,41 +1,27 @@
-use async_std::fs::write;
-use async_std::io::ReadExt;
 use async_std::stream;
-use bitfields::Error;
-use bytes::{BytesMut, BufMut, Bytes, Buf};
-use futures::future::ok;
-use tracing::dispatcher;
-use tracing::log::logger;
-use uuid::Variant;
+use bytes::{Bytes, Buf};
 use super::*;
 use quinn_proto::{
-    EcnCodepoint,
     ConnectionHandle,
     Connection,
     DatagramEvent,
     EndpointEvent,
     ConnectionEvent,
-    Transmit,
     Endpoint,
-    Streams, SendStream, RecvStream, Datagrams, Dir, Event, StreamId, Chunks,
+    Streams, SendStream, RecvStream, Datagrams, Dir, Event, StreamId,
 };
 use quinn_proto::StreamEvent::*;
 
-//use log::{info, warn};
 use crate::{
     messaging::{DispatchEnvelope, EventEnvelope, NetMessage, SerialisedFrame},
     net::{
-        buffers::{BufferChunk, BufferPool, EncodeBuffer},
+        buffers::{BufferPool},
         udp_state::UdpState,
         quic_config,
-        network_thread,
     },
     prelude::{NetworkStatus, SessionId},
-    serialisation::ser_helpers::deserialise_chunk_lease,
 };
 use std::convert::TryInto;
-use std::sync::Arc;
-use std::task::Poll;
 use std::{
     collections::VecDeque,
     collections::HashMap,
@@ -43,7 +29,7 @@ use std::{
     net::{SocketAddr}, cell::RefCell,
 };
 
-const MAX_DATAGRAMS: usize = 10;
+const MAX_DATAGRAMS: usize = 100;
 #[derive(Debug)]
 pub struct QuicEndpoint {
     logger: KompactLogger,
@@ -89,9 +75,6 @@ impl QuicEndpoint {
     pub fn recv(&mut self, ch: ConnectionHandle, s: StreamId) -> RecvStream<'_> {
         self.conn_mut(ch).recv_stream(s)
     }
-    pub fn datagrams(&mut self, ch: ConnectionHandle) -> Datagrams<'_> {
-        self.conn_mut(ch).datagrams()
-    }
 
     pub fn send_stream_quic(&mut self, data: &[u8]) -> io::Result<()> {
        // info!(self.logger, "send_stream_quic function {:?}", self.connection_handle);
@@ -102,7 +85,10 @@ impl QuicEndpoint {
             if let Some(stream_id) = self.stream_id.take() {
                 match self.send(ch, stream_id).write(data) {
                     Ok(_) => {
-                       // info!(self.logger, "Send on existing stream");
+                        // match self.send(ch, stream_id).finish() {
+                        //     Ok(_) => {},
+                        //     Err(err) => error!(self.logger, "not able to finish {:?}", err)
+                        // }
                     }
                     Err(err) => {
                         error!(self.logger, "Unable to send stream {:?}", err);
@@ -118,7 +104,7 @@ impl QuicEndpoint {
                            // info!(self.logger, "Open new stream");
                         }
                         Err(err) => {
-                            println!("error {:?}", err);
+                            error!(self.logger, "error {:?}", err);
                         },                
                     }              
                 }
@@ -131,75 +117,83 @@ impl QuicEndpoint {
 
     /// start connecting the client
     pub(super) fn connect(&mut self, remote: SocketAddr) -> io::Result<ConnectionHandle> {
-        let (client_ch, client_conn) = self
+        let (ch, client_conn) = self
             .endpoint
             .connect(quic_config::client_config(), remote, "localhost")
             .unwrap();
-        self.connections.insert(client_ch, client_conn);
-        self.connection_handle = Some(client_ch);
-        Ok(client_ch)
+        self.connections.insert(ch, client_conn);
+        self.connection_handle = Some(ch);
+        Ok(ch)
     }
 
     pub(super) fn drive(&mut self, now: Instant, udp_state: &mut UdpState, dispatcher_ref: DispatcherRef){
         while let Some(x) = self.endpoint.poll_transmit() {
+            info!(self.logger, "self.endpoint.poll_transmit()");
             udp_state.outbound_queue.push_back((x.destination, SerialisedFrame::Vec(x.contents)));
         }
-
         let mut endpoint_events: Vec<(ConnectionHandle, EndpointEvent)> = vec![];
-        for (ch, conn) in self.connections.iter_mut() {
-            //Returns packets to transmit
-            while let Some(x) = conn.poll_transmit(now, MAX_DATAGRAMS) {
-                udp_state.outbound_queue.push_back((x.destination, SerialisedFrame::Vec(x.contents)));
-            }
-            self.timeout = conn.poll_timeout();
-
-            if self.timeout.map_or(false, |x| x <= now) {
+         for (ch, conn) in self.connections.iter_mut() {
+            if self.timeout.map_or(false, |x| x < now) {
+                info!(self.logger, "conn.handle_timeout");
                 self.timeout = None;
                 conn.handle_timeout(now);
+            }
+           // 
+
+            for (_, mut events) in self.conn_events.drain() {
+                for event in events.drain(..) {
+                    info!(self.logger, "conn.handle_event()");
+                    conn.handle_event(event);
+                }
             }
 
             //Return endpoint-facing events
             while let Some(event) = conn.poll_endpoint_events() {
+                info!(self.logger, "conn.poll_endpoint_events()");
                 endpoint_events.push((*ch, event));
             }
-            for (ch, mut events) in self.conn_events.drain() {
-                for event in events.drain(..) {
-                    conn.handle_event(event);
-                }
+
+            while let Some(x) = conn.poll_transmit(now, MAX_DATAGRAMS) {
+                info!(self.logger, "conn.poll_transmit()");
+                udp_state.outbound_queue.push_back((x.destination, SerialisedFrame::Vec(x.contents)));
             }
+            self.timeout = conn.poll_timeout();
         }
 
         for (ch, event) in endpoint_events {
             //Process ConnectionEvents generated by the associated Endpoint
             if let Some(event) = self.endpoint.handle_event(ch, event) {
+                info!(self.logger, "self.endpoint.handle_event()");
                 if let Some(conn) = self.connections.get_mut(&ch) {
+                    info!(self.logger, "conn.handle_event from endpoint events");
                     conn.handle_event(event);
                 }
-            }
-        }
 
-        if let Some(ch) = self.connection_handle {
-            self.process_quic_events(ch, dispatcher_ref.clone(), udp_state);
-            self.connection_handle = Some(ch);
+            }
+
         }
+        self.process_quic_events(dispatcher_ref.clone());
+
     }
 
     pub(super) fn try_read_quic(&mut self, now: Instant, udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>, dispatcher_ref: DispatcherRef) -> io::Result<()> {
         //consume icoming packets and connection-generated events via handle and handle_event
+       // info!(self.logger, "try_read_quic from quic_endpoint");
         match udp_state.try_read(buffer_pool) {
             Ok((n, addr)) => {
-                let data = udp_state.input_buffer.read_chunk_lease(n).content.to_vec().as_slice().into(); 
+                let data = udp_state.input_buffer.read_chunk_lease(n).content.to_vec().as_slice().into();
                 if let Some((ch, event)) =
                     self.endpoint.handle(now, addr, None, None, data)
                 {
                     // We either accept new connection or redirect to existing connection
                     match event {
                         DatagramEvent::NewConnection(conn) => {
-                            info!(self.logger, "Accepting new connection from {}", &addr);
+                           // info!(self.logger, "Accepting new connection from {}", &addr);
                             self.connections.insert(ch, conn);
-                            self.accepted = Some(ch);
+                            self.connection_handle = Some(ch);
                         }
                         DatagramEvent::ConnectionEvent(event) => {
+                           // info!(self.logger, "Redirect to existing connection {}", &addr);
                             self.conn_events
                             .entry(ch)
                             .or_insert_with(VecDeque::new)
@@ -207,16 +201,17 @@ impl QuicEndpoint {
                             self.connection_handle = Some(ch);
                         }
                     }
-                    self.drive(now, udp_state, dispatcher_ref);
                 }
+                self.drive(now, udp_state, dispatcher_ref.clone());
+               // self.process_quic_events(dispatcher_ref.clone(), udp_state);
 
                 if !udp_state.outbound_queue.is_empty() {
                     match udp_state.try_write() {
                         Ok(_) => {
-                           // self.drive(now, udp_state);
                         },
                         // Other errors we'll consider fatal.
                         Err(err) => {
+                            error!(self.logger, "error in try_write_quic from read")
                         }
                     }
                 }
@@ -229,45 +224,75 @@ impl QuicEndpoint {
     }
 
     pub(super) fn try_write_quic(&mut self, now: Instant, udp_state: &mut UdpState, dispatcher_ref: DispatcherRef) -> io::Result<()>{
-        self.drive(now, udp_state, dispatcher_ref);
+       // info!(self.logger, "try_write_quic from endpoint");
+        self.drive(now, udp_state, dispatcher_ref.clone());
 
         match udp_state.try_write() {
             Ok(_) => {},
             // Other errors we'll consider fatal.
             Err(err) => {
-
+                error!(self.logger, "error in try_write_quic")
             }
         };
         Ok(())
     }
-
-    pub(super) fn process_quic_events(&mut self, ch: ConnectionHandle, dispatcher_ref: DispatcherRef, udp_state: &mut UdpState) {
-       //info!(self.logger, "process_quic_events");
-        while let Some(event) = self.conn_mut(ch).poll() {
-            match event {
-                Event::HandshakeDataReady => {
-                    info!(self.logger, "Handshake Data Ready {:?}", ch);
-                }
-                Event::Connected => {
-                    info!(self.logger, "Connected");
-                        dispatcher_ref.tell(DispatchEnvelope::Event(EventEnvelope::Network(NetworkStatus::ConnectionEstablished(
+ 
+    pub(super) fn process_quic_events(&mut self, dispatcher_ref: DispatcherRef) {
+        info!(self.logger, "process_quic_events");
+        if let Some(ch) = self.connection_handle.take() {  
+            while let Some(event) = self.conn_mut(ch).poll() {
+                match event {
+                    Event::HandshakeDataReady => {
+                        info!(self.logger, "Handshake Data Ready {:?}", ch);
+                    }
+                    Event::Connected => {
+                        info!(self.logger, "Connected {:?}", ch);
+                            dispatcher_ref.tell(DispatchEnvelope::Event(EventEnvelope::Network(NetworkStatus::ConnectionEstablished(
+                                SystemPath::with_socket(Transport::Quic, self.conn_mut(ch).remote_address()),
+                                SessionId::new_unique()))));
+                    }
+                    Event::ConnectionLost { reason } => {
+                        info!(self.logger, "Lost connection due to {:?}", reason);
+                        //TODO fix sessionid
+                        dispatcher_ref.tell(DispatchEnvelope::Event(EventEnvelope::Network(NetworkStatus::ConnectionLost(
                             SystemPath::with_socket(Transport::Quic, self.conn_mut(ch).remote_address()),
                             SessionId::new_unique()))));
-                }
-                Event::ConnectionLost { reason } => {
-                    info!(self.logger, "Lost connection due to {:?}", reason);
-                    //TODO fix sessionid
-                    dispatcher_ref.tell(DispatchEnvelope::Event(EventEnvelope::Network(NetworkStatus::ConnectionLost(
-                        SystemPath::with_socket(Transport::Quic, self.conn_mut(ch).remote_address()),
-                        SessionId::new_unique()))));
-                }
-                Event::Stream(Opened { dir: Dir::Bi}) => {
-                    info!(self.logger, "Bidirectional stream openend {:?}", ch);
-                   if let Some(id) = self.streams(ch).accept(Dir::Bi){
+                    }
+                    Event::Stream(Opened { dir: Dir::Bi}) => {
+                        info!(self.logger, "Bidirectional stream openend {:?}", ch);
+                        if let Some(id) = self.streams(ch).accept(Dir::Bi){
+                            let mut inbound: VecDeque<Bytes> = VecDeque::new();
+                            let mut receive = self.recv(ch, id);
+                            let mut chunks = receive.read(false).unwrap();
+
+                            match chunks.next(usize::MAX){
+                            Ok(Some(chunk)) => {
+                                    inbound.push_back(chunk.bytes);
+                                }
+                                Ok(None) => {
+                                    println!("stream is finished");
+
+                                }
+                                Err(_) => todo!(),
+
+                            }
+                            chunks.finalize();
+
+                            for mut byte in inbound.drain(..){
+                                byte.advance(FRAME_HEAD_LEN as usize);
+                                self.decode_quic_message(self.addr, byte);
+                            }
+                        }
+                    }
+                    Event::Stream(Opened { dir: Dir::Uni}) => {
+                        // this will not be used 
+                        info!(self.logger, "Unidirectional stream opened {:?}", ch);
+                    }
+                    Event::Stream(Readable { id }) => {
+                        info!(self.logger, "Stream readable {:?} on id {:?}", ch, id);
                         let mut inbound: VecDeque<Bytes> = VecDeque::new();
                         let mut receive = self.recv(ch, id);
                         let mut chunks = receive.read(false).unwrap();
-                        println!("Stream chunks {:?}", ch);
 
                         match chunks.next(usize::MAX){
                         Ok(Some(chunk)) => {
@@ -284,71 +309,41 @@ impl QuicEndpoint {
 
                         for mut byte in inbound.drain(..){
                             byte.advance(FRAME_HEAD_LEN as usize);
-                            info!(self.logger, "Decode messages {:?}", ch);
                             self.decode_quic_message(self.addr, byte);
                         }
                     }
-                }
-                Event::Stream(Opened { dir: Dir::Uni}) => {
-                    // this will not be used 
-                    info!(self.logger, "Unidirectional stream opened {:?}", ch);
-                }
-                Event::Stream(Readable { id }) => {
-                    info!(self.logger, "Stream readable {:?}", ch);
-                    let mut inbound: VecDeque<Bytes> = VecDeque::new();
-                    let mut receive = self.recv(ch, id);
-                    //println!("Stream receive {:?}", ch);
-                    let mut chunks = receive.read(false).unwrap();
-                    //println!("Stream chunks {:?}", ch);
-
-                    match chunks.next(usize::MAX){
-                    Ok(Some(chunk)) => {
-                            inbound.push_back(chunk.bytes);
-                        }
-                        Ok(None) => {
-                            println!("stream is finished");
-
-                        }
-                        Err(_) => todo!(),
+                    Event::Stream(Writable { id: StreamId(_) }) => {
+                        info!(self.logger, "Stream writeable {:?}", ch);
 
                     }
-                    chunks.finalize();
+                    Event::Stream(Finished { id: StreamId(_) }) => {
+                        info!(self.logger, "Stream finished {:?}", ch);
 
-                    for mut byte in inbound.drain(..){
-                        byte.advance(FRAME_HEAD_LEN as usize);
-                       // info!(self.logger, "Decode messages {:?}", ch);
-                        self.decode_quic_message(self.addr, byte);
+
                     }
-               }
-                Event::Stream(Writable { id: StreamId(_) }) => {
-                    info!(self.logger, "Stream writeable {:?}", ch);
+                    Event::Stream(Stopped { id: StreamId(_), error_code: VarInt }) => {
+                        info!(self.logger, "Stream stopped {:?}", ch);
 
+                    }
+                    Event::Stream(Available { dir: Dir::Bi }) => {
+                        info!(self.logger, "Bidirectional stream available {:?}", ch);
+
+                    }
+                    Event::Stream(Available { dir: Dir::Uni }) => {
+                        //TODO: we are not expecting uni direction for this implementation
+                        info!(self.logger, "Unidirectional stream available {:?}", ch);
+
+                    }
+                    Event::DatagramReceived => {
+                        //TODO: we are not expecting datagram for this implementation
+                        info!(self.logger, "DatagramReceived {:?}", ch);
+
+                    },
                 }
-                Event::Stream(Finished { id: StreamId(_) }) => {
-                    println!("Stream finished {:?}", ch);
-
-                }
-                Event::Stream(Stopped { id: StreamId(_), error_code: VarInt }) => {
-                    println!("Stream stopped {:?}", ch);
-
-                }
-                Event::Stream(Available { dir: Dir::Bi }) => {
-                    println!("Stream available Bi {:?}", ch);
-
-                }
-                Event::Stream(Available { dir: Dir::Uni }) => {
-                    //TODO: we are not expecting uni direction for this implementation
-                    println!("Stream available uni {:?}", ch);
-
-                }
-                Event::DatagramReceived => {
-                    //TODO: we are not expecting datagram for this implementation
-                    //
-                    eprintln!("DatagramReceived {:?}", ch);
-
-                },
             }
+            self.connection_handle = Some(ch);
         }
+        info!(self.logger, "None");
     }
 
     pub fn decode_quic_message(&mut self, source: SocketAddr, buf: Bytes) {

@@ -1,40 +1,44 @@
 use criterion::{criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
+use core::num;
 use std::time::{Duration, Instant};
 //use kompact::*;
 use kompact::prelude::*;
 //use kompact::default_components::DeadletterBox;
 
-const MSG_COUNT: u64 = 1000;
+const MSG_COUNT: u64 = 100;
 
 pub fn kompact_network_latency(c: &mut Criterion) {
     let mut g = c.benchmark_group("Ping Pong RTT");
-    g.bench_function("Ping Pong RTT (Static)", ping_pong_latency_static);
-    g.bench_function("Ping Pong RTT (Indexed)", ping_pong_latency_indexed);
-    g.bench_function(
-        "Ping Pong RTT Pipeline All (Static)",
-        ping_pong_latency_pipeline_static,
-    );
-    g.bench_function(
-        "Ping Pong RTT Pipeline All (Indexed)",
-        ping_pong_latency_pipeline_indexed,
-    );
-    g.finish();
+    //g.sample_size(10);
+   // g.bench_function("Ping Pong RTT (Static)", ping_pong_latency_static);
 
-    let mut group = c.benchmark_group("Ping Pong RTT (Static) by Threadpool Size");
-    for threads in 1..8 {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(threads),
-            &threads,
-            ping_pong_latency_static_threads,
-        );
-    }
-    group.finish();
+    // // //g.bench_function("Ping Pong RTT (Indexed)", ping_pong_latency_indexed);
+    //  g.bench_function(
+    //     "Ping Pong RTT Pipeline All (Static)",
+    //     ping_pong_latency_pipeline_static,
+    // );
+    // // g.bench_function(
+    // //     "Ping Pong RTT Pipeline All (Indexed)",
+    // //     ping_pong_latency_pipeline_indexed,
+    // // );
+   // g.finish();
+
+    // let mut group = c.benchmark_group("Ping Pong RTT (Static) by Threadpool Size");
+    // for threads in 1..8 {
+    //     group.bench_with_input(
+    //         BenchmarkId::from_parameter(threads),
+    //         &threads,
+    //         ping_pong_latency_static_threads,
+    //     );
+    // }
+    // group.finish();
 }
 
 pub fn kompact_network_throughput(c: &mut Criterion) {
-    let mut g = c.benchmark_group("Ping Pong Throughput with Pipelining");
+    let mut g = c.benchmark_group("Ping Pong Throughput with Pipelining QUIC");
+    g.sample_size(10);
     g.throughput(Throughput::Elements(2 * MSG_COUNT));
-    for pipeline in [1u64, 10u64, 100u64, 1000u64].iter() {
+    for pipeline in [1u64 , 10u64 , 100u64, 1000u64].iter() {
         //...[1u64, ...
         g.bench_with_input(
             BenchmarkId::from_parameter(pipeline),
@@ -87,7 +91,7 @@ pub fn latch_synchronoise(b: &mut Bencher) {
 
 pub fn as_binary() {
     use ppstatic::*;
-    ping_pong_latency_bin(100000, Pinger::new, Ponger::new, |pinger| {
+    ping_pong_latency_bin(1000000, Pinger::new, Ponger::new, |pinger| {
         pinger.on_definition(|cd| cd.experiment_port())
     });
 }
@@ -139,7 +143,8 @@ where
     res
 }
 
-fn setup_system(name: &'static str, threads: usize) -> KompactSystem {
+fn 
+setup_system(name: &'static str, threads: usize) -> KompactSystem {
     use kompact::config_keys::system;
     let mut cfg = KompactConfig::default();
     cfg.set_config_value(&system::LABEL, name.to_string());

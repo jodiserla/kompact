@@ -7,7 +7,7 @@ use bytes::{Bytes, BufMut, BytesMut};
 use mio::net::UdpSocket;
 use network_thread::*;
 use quinn_proto::Transmit;
-use std::{cell::RefCell, cmp::min, collections::VecDeque, io, io::Error, net::SocketAddr, convert::TryInto};
+use std::{cell::RefCell, cmp::min, collections::VecDeque, io, io::Error, net::SocketAddr, convert::TryInto, time::Instant};
 
 // Note that this is a theoretical IPv4 limit.
 // This may be violated with IPv6 jumbograms.
@@ -165,7 +165,7 @@ impl UdpState {
         }
     }
 
-    pub(super) fn enqueue_serialised(&mut self, addr: SocketAddr, frame: SerialisedFrame) -> () {
+    pub(super) fn enqueue_serialised(&mut self, time: Instant, addr: SocketAddr, frame: SerialisedFrame) -> () {
         self.outbound_queue.push_back((addr, frame));
     }
 }

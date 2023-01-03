@@ -19,13 +19,13 @@ sequence_trie = "0.3"
 rand = "0.7"
 criterion = {version = "0.3"}
 # only works on nightly
-# criterion = {version = "0.3", features=["real_blackbox"]}
+# criterion = {version = "0.3", features=["real_blackbox", "html_reports"]}
 
 [dependencies.kompact]
 path = "../../core/"
 default-features = false
-# features = ["silent_logging", "low_latency"]
-features = ["silent_logging", "ser_id_64", "use_local_executor"]
+ features = ["silent_logging", "low_latency"]
+#features = ["ser_id_64", "use_local_executor"]
 # features = ["silent_logging", "ser_id_64"]
 
 [dependencies.datastructures]
@@ -35,12 +35,12 @@ path = "../datastructures"
 rustc_version = "0.2"
 
 #[dev-dependencies]
-#criterion = {version = "0.3", features=['real_blackbox']}
+#criterion = {version = "0.3", features=["real_blackbox", "html_reports"]}
 
-# [[bench]]
-# name = "network_latency"
-# path = "src/network_latency.rs"
-# harness = false
+[[bench]]
+name = "network_latency"
+path = "src/network_latency.rs"
+harness = false
 
 # [[bench]]
 # name = "hashes"
@@ -57,12 +57,12 @@ rustc_version = "0.2"
 # path = "src/loop_opts.rs"
 # harness = false
 
-# [[bench]]
-# name = "pingperf"
-# path = "src/pingperf.rs"
-# harness = false
+#[[bench]]
+#name = "pingperf"
+#path = "src/pingperf.rs" 
+#harness = false
 
-[[bench]]
-name = "actor_store"
-path = "src/actor_store/mod.rs"
-harness = false
+#[[bench]]
+#name = "actor_store"
+#path = "src/actor_store/mod.rs"
+#harness = false

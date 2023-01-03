@@ -199,13 +199,15 @@ impl NetworkThread {
             self.poll
                 .poll(&mut events, self.get_poll_timeout())
                 .expect("Error when calling Poll");
+                
+          //  self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: false, writeable: true, retries: 0});
 
             for event in events
                 .iter()
                 .map(EventWithRetries::from)
                 .chain(self.retry_queue.split_off(0))
             {
-               // info!(self.log, "Events from running networkThread {:?}", events);
+               //info!(self.log, "Events from running networkThread {:?}", events);
 
                 self.handle_event(event);
 
@@ -231,6 +233,7 @@ impl NetworkThread {
             ))
         } else if self.retry_queue.is_empty() {
             None
+            //Some(Duration::from_millis(200))
         } else {
             Some(Duration::from_secs(0))
         }
@@ -248,7 +251,7 @@ impl NetworkThread {
                 if let Some(mut endpoint) = self.endpoint.take(){
                     if let Some(mut udp_state) = self.udp_state.take(){
                         if event.writeable {
-                           //info!(self.log, "event is writeable ");
+                          // info!(self.log, "event is writeable ");
                             self.write_quic(&mut endpoint, &mut udp_state);
                         }
                         if event.readable {
@@ -265,11 +268,9 @@ impl NetworkThread {
             }
             _ => {
                 if event.writeable {
-                    println!("write tcp in network thread ");
                     self.write_tcp(&event.token);
                 }
                 if event.readable {
-                    println!("read tcp in network thread ");
                     self.read_tcp(&event);
                 }
             }
@@ -465,9 +466,11 @@ impl NetworkThread {
 
    fn read_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
         match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
-            Ok(_) => {}
+            Ok(_) => {
+               // endpoint.process_quic_events(self.dispatcher_ref.clone(), udp_state)
+            }
             Err(e) => {
-                warn!(self.log, "Error during QUIC reading: {}", e);
+              //  warn!(self.log, "Error during QUIC reading: {}", e);
             }
         }
         while let Some(net_message) = endpoint.incoming_messages.pop_front() {
@@ -476,7 +479,9 @@ impl NetworkThread {
     }
    fn write_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
         match endpoint.try_write_quic(Instant::now(), udp_state, self.dispatcher_ref.clone()) {
-            Ok(_) => {}
+            Ok(_) => {
+                //endpoint.process_quic_events(self.dispatcher_ref.clone(), udp_state)
+            }
             Err(e) => {
                 warn!(self.log, "Error during QUIC writing: {}", e);
             }
@@ -600,7 +605,7 @@ impl NetworkThread {
         if let Some(mut udp_state) = self.udp_state.take() {
             match self.serialise_dispatch_data(data) {
                 Ok(frame) => {
-                    udp_state.enqueue_serialised(address, frame);
+                    udp_state.enqueue_serialised(Instant::now(), address, frame);
                     match udp_state.try_write() {
                         Ok(_) => {}
                         Err(e) => {
@@ -637,7 +642,7 @@ impl NetworkThread {
             if let Some(mut udp_state) = self.udp_state.take() {
                 match self.serialise_dispatch_data(data) {
                     Ok(frame) => {
-                        self.send_stream_quic(frame.bytes(), &mut endpoint);
+                        self.send_stream_quic(frame.bytes().clone(), &mut endpoint);
                         match endpoint.try_write_quic(Instant::now(), &mut udp_state, self.dispatcher_ref.clone()) {
                             Ok(_) => {}
                             Err(e) => {
