@@ -200,7 +200,7 @@ impl NetworkThread {
                 .poll(&mut events, self.get_poll_timeout())
                 .expect("Error when calling Poll");
                 
-          //  self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: false, writeable: true, retries: 0});
+           // self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: true, writeable: false, retries: 0});
 
             for event in events
                 .iter()
