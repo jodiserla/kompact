@@ -1,13 +1,11 @@
-use super::{*, buffers::ChunkLease};
+use super::{*};
 use crate::{
     messaging::{NetMessage, SerialisedFrame},
-    net::buffers::{BufferChunk, BufferPool, DecodeBuffer, decode_buffer},
+    net::buffers::{BufferChunk, BufferPool, DecodeBuffer},
 };
-use bytes::{Bytes, BufMut, BytesMut};
 use mio::net::UdpSocket;
 use network_thread::*;
-use quinn_proto::Transmit;
-use std::{cell::RefCell, cmp::min, collections::VecDeque, io, io::Error, net::SocketAddr, convert::TryInto, time::Instant};
+use std::{cell::RefCell, cmp::min, collections::VecDeque, io, io::Error, net::SocketAddr};
 
 // Note that this is a theoretical IPv4 limit.
 // This may be violated with IPv6 jumbograms.
@@ -49,12 +47,16 @@ impl UdpState {
     pub(super) fn try_write(&mut self) -> io::Result<usize> {
         let mut sent_bytes: usize = 0;
         let mut interrupts = 0;
+        //info!(self.logger, "before popping outbound_queue");
         while let Some((addr, mut frame)) = self.outbound_queue.pop_front() {
+            //info!(self.logger, "after popping outbound_queue");
+
             frame.make_contiguous();
             match self.socket.send_to(frame.bytes(), addr) {
                 Ok(n) => {
                     // This really shouldn't happen, and can lead to inconsistent network messages
                     assert_eq!(n, frame.len(), "A UDP frame was written incompletely!");
+                   // info!(self.logger, "FRAME {:?}", frame.len());
                     sent_bytes += n;
                 }
                 Err(ref err) if would_block(err) => {
@@ -165,7 +167,7 @@ impl UdpState {
         }
     }
 
-    pub(super) fn enqueue_serialised(&mut self, time: Instant, addr: SocketAddr, frame: SerialisedFrame) -> () {
+    pub(super) fn enqueue_serialised(&mut self, addr: SocketAddr, frame: SerialisedFrame) -> () {
         self.outbound_queue.push_back((addr, frame));
     }
 }

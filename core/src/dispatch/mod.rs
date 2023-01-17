@@ -7,7 +7,7 @@ use crate::{
 use std::{pin::Pin, sync::Arc};
 
 use crate::{
-    actors::{NamedPath, Transport::Quic},
+    actors::{NamedPath},
     messaging::{
         ActorRegistration,
         DispatchData,

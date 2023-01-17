@@ -1,8 +1,3 @@
-use std::time::Instant;
-
-use async_std::io::ReadExt;
-use bytes::BufMut;
-
 use super::*;
 
 /// Wrapper for serialised data with a serialisation id
@@ -67,7 +62,7 @@ pub enum SerialisedFrame {
     /// Variant for the Pooled buffers
     ChunkRef(ChunkRef),
     /// Variant for Quic messaging
-    Vec(Vec<(u8)>),
+    Vec(Vec<u8>),
 }
 
 impl SerialisedFrame {

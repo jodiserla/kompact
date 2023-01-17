@@ -1,9 +1,7 @@
-use std::{sync::Arc, time::Instant, convert::TryInto};
-
-use hex_literal::hex;
+use std::{sync::Arc};
 use quinn_proto::{
     ServerConfig,
-    ClientConfig, Endpoint, Transmit,
+    ClientConfig,
 };
 use rustls::{Certificate, KeyLogFile, PrivateKey};
 use lazy_static::lazy_static;

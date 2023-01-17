@@ -1,4 +1,3 @@
-use std::time::Instant;
 use super::*;
 use crate::{
     dispatch::{
@@ -15,8 +14,6 @@ use crate::{
     prelude::{NetworkStatus, SessionId},
     serialisation::ser_helpers::deserialise_chunk_lease,
 };
-use async_std::stream;
-use bitfields::Error;
 use crossbeam_channel::Receiver as Recv;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use iprange::{IpRange, ToNetwork};
@@ -33,17 +30,14 @@ use std::{
     cell::{RefCell, RefMut},
     collections::VecDeque,
     io,
-    net::{IpAddr, Shutdown, SocketAddr, Ipv4Addr},
+    net::{IpAddr, Shutdown, SocketAddr},
     ops::DerefMut,
     rc::Rc,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
     usize,
-    env,
 };
-//use crate::net::quic_client::server_config;
-use quinn_proto::{Endpoint, ConnectionHandle, StreamId, Dir, SendStream, Event::{HandshakeDataReady, Connected, ConnectionLost}, StreamEvent};
-use assert_matches::assert_matches;
+use quinn_proto::{Endpoint};
 // Used for identifying connections
 const TCP_SERVER: Token = Token(0);
 const UDP_SOCKET: Token = Token(1);
@@ -140,7 +134,7 @@ impl NetworkThreadBuilder {
             .expect("Could not get buffer for setting up UDP");
         let udp_state = UdpState::new(udp_socket, udp_buffer, logger.clone(), &self.network_config);
 
-        let endpoint_config = Endpoint::new(Default::default(), Some(Arc::new(quic_config::server_config().clone())));
+        let endpoint_config = Endpoint::new(Default::default(), Some(Arc::new(quic_config::server_config())));
         let endpoint = QuicEndpoint::new(endpoint_config, actual_addr, logger.clone());
 
         NetworkThread {
@@ -195,12 +189,52 @@ impl NetworkThread {
     pub fn run(mut self) -> () {
         trace!(self.log, "NetworkThread starting");
         let mut events = Events::with_capacity(MAX_POLL_EVENTS);
+        
         loop {
+            let now = Instant::now();
             self.poll
                 .poll(&mut events, self.get_poll_timeout())
                 .expect("Error when calling Poll");
                 
-           // self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: true, writeable: false, retries: 0});
+
+               //I think you need to keep a sorted list of timeouts in the network_thread and then 
+               // calculate the next timeout and handle all expired timeouts in the event loop 
+               // (where we set the timeout hack before)
+        //    let mut tmp: VecDeque<Instant> = VecDeque::new();
+        //    if let Some(endpoint) = self.endpoint.as_mut() {
+        //             //info!(self.log, "TIMEOUTS ADDED TO TMP {:?}", endpoint.timeouts.len());
+        //             for timeout in endpoint.timeouts.drain(..) {
+        //                 tmp.push_back(timeout);
+        //                 tmp.make_contiguous().sort();
+        //             }
+        //     }
+        //     if let Some(mut endpoint) = self.endpoint.take(){
+        //         if let Some(mut udp_state) = self.udp_state.take() {
+        //              let length = tmp.len();
+        //             for timeout in tmp.drain(..) {
+        //                 if timeout <= now {
+        //                     info!(self.log, "HOW MANY TIMEOUTS {:?}", length);
+        //                     //self.write_quic(&mut endpoint, &mut udp_state);
+        //                     //self.read_quic(&mut endpoint, &mut udp_state);
+        //                   // while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {}
+        //                   //endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone());
+        //                    //self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: true, writeable: true, retries: 0});
+
+        //                     // if let Some(ch) = endpoint.connection_handle.take() {
+        //                     // info!(self.log, "GET CONNECTION HANDLE AND HANDLE TIMEOUT handle timeout");
+
+        //                     //     endpoint.conn_mut(ch).handle_timeout(now);
+        //                    // endpoint.poll_and_handle(timeout, &mut udp_state, self.dispatcher_ref.clone());
+        //                     //     endpoint.connection_handle = Some(ch);
+        //                     // }
+        //                 }
+        //             }
+        //             //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {}
+
+        //             self.udp_state = Some(udp_state);
+        //         }
+        //         self.endpoint = Some(endpoint);
+        //   }
 
             for event in events
                 .iter()
@@ -232,8 +266,8 @@ impl NetworkThread {
                 self.network_config.get_connection_retry_interval(),
             ))
         } else if self.retry_queue.is_empty() {
-            None
-            //Some(Duration::from_millis(200))
+           // None
+            Some(Duration::from_millis(200))
         } else {
             Some(Duration::from_secs(0))
         }
@@ -465,27 +499,27 @@ impl NetworkThread {
     }
 
    fn read_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
-        match endpoint.try_read_quic(Instant::now(), udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
-            Ok(_) => {
-               // endpoint.process_quic_events(self.dispatcher_ref.clone(), udp_state)
-            }
-            Err(e) => {
-              //  warn!(self.log, "Error during QUIC reading: {}", e);
-            }
-        }
+        // match endpoint.try_read_quic(udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {
+        //     Ok(_) => {}
+        //     Err(e) => {
+        //         warn!(self.log, "Error during QUIC reading: {}", e);
+        //     }
+        // }
+        while endpoint.step(udp_state, &self.buffer_pool, self.dispatcher_ref.clone()){}
+
         while let Some(net_message) = endpoint.incoming_messages.pop_front() {
             self.deliver_net_message(net_message);
         }
     }
    fn write_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
-        match endpoint.try_write_quic(Instant::now(), udp_state, self.dispatcher_ref.clone()) {
-            Ok(_) => {
-                //endpoint.process_quic_events(self.dispatcher_ref.clone(), udp_state)
-            }
-            Err(e) => {
-                warn!(self.log, "Error during QUIC writing: {}", e);
-            }
-        }
+        // match endpoint.try_write_quic(udp_state, self.dispatcher_ref.clone()) {
+        //     Ok(_) => {}
+        //     Err(e) => {
+        //         warn!(self.log, "Error during QUIC writing: {}", e);
+        //     }
+        // }
+        while endpoint.step(udp_state, &self.buffer_pool, self.dispatcher_ref.clone()){}
+
     }
 
     fn send_stream_quic(&mut self, data: &[u8], endpoint: &mut QuicEndpoint) -> () {
@@ -605,7 +639,7 @@ impl NetworkThread {
         if let Some(mut udp_state) = self.udp_state.take() {
             match self.serialise_dispatch_data(data) {
                 Ok(frame) => {
-                    udp_state.enqueue_serialised(Instant::now(), address, frame);
+                    udp_state.enqueue_serialised(address, frame);
                     match udp_state.try_write() {
                         Ok(_) => {}
                         Err(e) => {
@@ -642,8 +676,8 @@ impl NetworkThread {
             if let Some(mut udp_state) = self.udp_state.take() {
                 match self.serialise_dispatch_data(data) {
                     Ok(frame) => {
-                        self.send_stream_quic(frame.bytes().clone(), &mut endpoint);
-                        match endpoint.try_write_quic(Instant::now(), &mut udp_state, self.dispatcher_ref.clone()) {
+                        self.send_stream_quic(frame.bytes(), &mut endpoint);
+                        match endpoint.try_write_quic(&mut udp_state, self.dispatcher_ref.clone()) {
                             Ok(_) => {}
                             Err(e) => {
                                 warn!(self.log, "Error during UDP sending: {}", e);
@@ -1381,8 +1415,8 @@ impl BlockList {
 #[cfg(test)]
 #[allow(unused_must_use)]
 mod tests {
-    use quinn_proto::Connection;
-    use tonic::transport::server;
+    use quinn_proto::{ConnectionHandle};
+    use assert_matches::assert_matches;
 
     use super::*;
     use crate::{dispatch::NetworkConfig, net::buffers::BufferConfig};
@@ -1395,12 +1429,9 @@ mod tests {
             .poll
             .poll(&mut events, Some(Duration::from_millis(100)));
         for event in events.iter() {
-            println!("EVENT");
             thread.handle_event(EventWithRetries::from(event));
         }
         while let Some(event) = thread.retry_queue.pop_front() {
-            println!("RETRY QUEUE");
-
             thread.handle_event(event);
         }
     }

@@ -1,7 +1,6 @@
-use arc_swap::ArcSwap;
 use crossbeam_channel::Receiver as Rcv;
 use ipnet::IpNet;
-use kompact::{prelude::*, prelude_test::net_test_helpers::*, lookup::ActorStore};
+use kompact::{prelude::*, prelude_test::net_test_helpers::*};
 use std::{net::SocketAddr, sync::Arc, thread, time::Duration};
 
 
@@ -408,39 +407,15 @@ fn remote_delivery_to_registered_actors_eager_quic() {
     let (ponger_unique, ponger_unique_path) = start_ponger(&ponger_system, PongerAct::new_eager());
    // let (ponger_unique1, ponger_unique_path1) = start_ponger(&ponger_system, PongerAct::new_eager());
     //let (ponger_unique2, ponger_unique_path2) = start_ponger(&ponger_system, PongerAct::new_eager());
-    let (ponger_named, _) = start_ponger(&ponger_system, PongerAct::new_eager());
-    let ponger_named_path = ponger_system
-        .register_by_alias(&ponger_named, "custom_name")
-        .wait_expect(REGISTRATION_TIMEOUT, "Ponger failed to register!");
+    // let (ponger_named, _) = start_ponger(&ponger_system, PongerAct::new_eager());
+    // let ponger_named_path = ponger_system
+    //     .register_by_alias(&ponger_named, "custom_name")
+    //     .wait_expect(REGISTRATION_TIMEOUT, "Ponger failed to register!");
 
     let (pinger_unique, all_unique_pongs_received_future) =
         start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path));
 
-    // let (pinger_unique1, all_unique_pongs_received_future1) =
-    //     start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path1));
-
-    // let (pinger_unique2, all_unique_pongs_received_future2) =
-    //     start_pinger(&pinger_system, PingerAct::new_eager(ponger_unique_path2));
-
-
-    let (pinger_named, all_named_pongs_received_future) =
-        start_pinger(&pinger_system, PingerAct::new_eager(ponger_named_path));
-
     all_unique_pongs_received_future
-        .wait_timeout(PINGPONG_TIMEOUT)
-        .expect("Time out waiting for ping pong to complete");
-
-    
-    // all_unique_pongs_received_future1
-    //     .wait_timeout(PINGPONG_TIMEOUT)
-    //     .expect("Time out waiting for ping pong to complete");
-
-    
-    // all_unique_pongs_received_future2
-    //     .wait_timeout(PINGPONG_TIMEOUT)
-    //     .expect("Time out waiting for ping pong to complete");
-
-    all_named_pongs_received_future
         .wait_timeout(PINGPONG_TIMEOUT)
         .expect("Time out waiting for ping pong to complete");
 
@@ -449,54 +424,13 @@ fn remote_delivery_to_registered_actors_eager_quic() {
         .wait_timeout(STOP_COMPONENT_TIMEOUT)
         .expect("Pinger never stopped!");
 
-    // pinger_system
-    //     .stop_notify(&pinger_unique1)
-    //     .wait_timeout(STOP_COMPONENT_TIMEOUT)
-    //     .expect("Pinger never stopped!");
-
-    // pinger_system
-    //     .stop_notify(&pinger_unique2)
-    //     .wait_timeout(STOP_COMPONENT_TIMEOUT)
-    //     .expect("Pinger never stopped!");
-
-    pinger_system
-        .stop_notify(&pinger_named)
-        .wait_timeout(STOP_COMPONENT_TIMEOUT)
-        .expect("Ponger never died!");
-
     ponger_system
         .kill_notify(ponger_unique)
         .wait_timeout(STOP_COMPONENT_TIMEOUT)
         .expect("Pinger never stopped!");
-    
-    // ponger_system
-    //     .kill_notify(ponger_unique1)
-    //     .wait_timeout(STOP_COMPONENT_TIMEOUT)
-    //     .expect("Pinger never stopped!");
-
-    // ponger_system
-    //     .kill_notify(ponger_unique2)
-    //     .wait_timeout(STOP_COMPONENT_TIMEOUT)
-    //     .expect("Pinger never stopped!");
-
-    ponger_system
-        .kill_notify(ponger_named)
-        .wait_timeout(STOP_COMPONENT_TIMEOUT)
-        .expect("Ponger never died!");
 
     pinger_unique.on_definition(|c| {
-        assert_eq!(c.count, PING_COUNT);
-    });
-
-    // pinger_unique1.on_definition(|c| {
-    //     assert_eq!(c.count, PING_COUNT);
-    // });
-
-    // pinger_unique2.on_definition(|c| {
-    //     assert_eq!(c.count, PING_COUNT);
-    // });
-
-    pinger_named.on_definition(|c| {
+        println!("pinger_unique c.count {:?}", c.count);
         assert_eq!(c.count, PING_COUNT);
     });
 

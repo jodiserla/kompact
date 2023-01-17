@@ -6,7 +6,6 @@ use crate::{
 };
 use bitfields::BitField;
 use bytes::{Buf, BufMut};
-use log::info;
 use std::{any::Any, convert::TryFrom, net::IpAddr};
 use uuid::Uuid;
 
