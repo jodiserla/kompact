@@ -26,6 +26,7 @@ use mio::{
     Token,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
+use tracing::dispatcher;
 use std::{
     cell::{RefCell, RefMut},
     collections::VecDeque,
@@ -208,33 +209,38 @@ impl NetworkThread {
         //                 tmp.make_contiguous().sort();
         //             }
         //     }
-        //     if let Some(mut endpoint) = self.endpoint.take(){
-        //         if let Some(mut udp_state) = self.udp_state.take() {
-        //              let length = tmp.len();
-        //             for timeout in tmp.drain(..) {
-        //                 if timeout <= now {
-        //                     info!(self.log, "HOW MANY TIMEOUTS {:?}", length);
-        //                     //self.write_quic(&mut endpoint, &mut udp_state);
-        //                     //self.read_quic(&mut endpoint, &mut udp_state);
-        //                   // while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {}
-        //                   //endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone());
-        //                    //self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: true, writeable: true, retries: 0});
+        //self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: true, writeable: true, retries: 0});
 
-        //                     // if let Some(ch) = endpoint.connection_handle.take() {
-        //                     // info!(self.log, "GET CONNECTION HANDLE AND HANDLE TIMEOUT handle timeout");
+            if let Some(mut endpoint) = self.endpoint.take(){
+                if let Some(mut udp_state) = self.udp_state.take() {
+                    // let length = tmp.len();
+                 //   for timeout in tmp.drain(..) {
+                        if endpoint.timeout <= Some(now) {
+                            info!(self.log, "TIMEOUT");
+                           // self.write_quic(&mut endpoint, &mut udp_state);
+                           // self.read_quic(&mut endpoint, &mut udp_state);
+                          //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {}
+                          //endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone());
+                          // self.handle_event(EventWithRetries{ token: UDP_SOCKET, readable: true, writeable: true, retries: 0});
 
-        //                     //     endpoint.conn_mut(ch).handle_timeout(now);
-        //                    // endpoint.poll_and_handle(timeout, &mut udp_state, self.dispatcher_ref.clone());
-        //                     //     endpoint.connection_handle = Some(ch);
-        //                     // }
-        //                 }
-        //             }
-        //             //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {}
+                            // if let Some(ch) = endpoint.connection_handle.take() {
+                            // info!(self.log, "GET CONNECTION HANDLE AND HANDLE TIMEOUT handle timeout");
 
-        //             self.udp_state = Some(udp_state);
-        //         }
-        //         self.endpoint = Some(endpoint);
-        //   }
+                            //     endpoint.conn_mut(ch).handle_timeout(now);
+                          endpoint.poll_and_handle(now, &mut udp_state, self.dispatcher_ref.clone());
+                          self.write_quic(&mut endpoint, &mut udp_state);
+                          //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {};
+
+                            //     endpoint.connection_handle = Some(ch);
+                            // }
+                        }
+                   // }
+                    //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {}
+
+                    self.udp_state = Some(udp_state);
+                }
+                self.endpoint = Some(endpoint);
+          }
 
             for event in events
                 .iter()
@@ -266,8 +272,8 @@ impl NetworkThread {
                 self.network_config.get_connection_retry_interval(),
             ))
         } else if self.retry_queue.is_empty() {
-           // None
-            Some(Duration::from_millis(200))
+            None
+            //Some(Duration::from_millis(200))
         } else {
             Some(Duration::from_secs(0))
         }
@@ -285,12 +291,16 @@ impl NetworkThread {
                 if let Some(mut endpoint) = self.endpoint.take(){
                     if let Some(mut udp_state) = self.udp_state.take(){
                         if event.writeable {
-                          // info!(self.log, "event is writeable ");
+                           info!(self.log, "event is writeable ");
                             self.write_quic(&mut endpoint, &mut udp_state);
+                            //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {};
+
                         }
                         if event.readable {
-                            //info!(self.log, "event is readable ");
+                            info!(self.log, "event is readable ");
                             self.read_quic(&mut endpoint, &mut udp_state);
+                            //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {};
+
                         }
                         self.udp_state = Some(udp_state);
                     }
@@ -512,13 +522,13 @@ impl NetworkThread {
         }
     }
    fn write_quic(&mut self, endpoint: &mut QuicEndpoint, udp_state: &mut UdpState) -> (){
-        // match endpoint.try_write_quic(udp_state, self.dispatcher_ref.clone()) {
-        //     Ok(_) => {}
-        //     Err(e) => {
-        //         warn!(self.log, "Error during QUIC writing: {}", e);
-        //     }
-        // }
-        while endpoint.step(udp_state, &self.buffer_pool, self.dispatcher_ref.clone()){}
+        match endpoint.try_write_quic(udp_state, self.dispatcher_ref.clone()) {
+            Ok(_) => {}
+            Err(e) => {
+                warn!(self.log, "Error during QUIC writing: {}", e);
+            }
+        }
+        //while endpoint.step(udp_state, &self.buffer_pool, self.dispatcher_ref.clone()){}
 
     }
 
@@ -677,6 +687,7 @@ impl NetworkThread {
                 match self.serialise_dispatch_data(data) {
                     Ok(frame) => {
                         self.send_stream_quic(frame.bytes(), &mut endpoint);
+                        //while endpoint.step(&mut udp_state, &self.buffer_pool, self.dispatcher_ref.clone()) {};
                         match endpoint.try_write_quic(&mut udp_state, self.dispatcher_ref.clone()) {
                             Ok(_) => {}
                             Err(e) => {

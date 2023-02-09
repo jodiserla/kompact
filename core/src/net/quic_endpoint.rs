@@ -90,7 +90,7 @@ impl QuicEndpoint {
        // info!(self.logger, "send_stream_quic function {:?}", self.connection_handle);
         if let Some(ch) = self.connection_handle.take() {
             if let Some(stream_id) = self.stream_id.take() {
-                info!(self.logger, "Send stream on  {:?} {:?}", stream_id, ch);
+                //info!(self.logger, "Send stream on  {:?} {:?}", stream_id, ch);
                 match self.send(ch, stream_id).write(data) {
                     Ok(_) => {
                     }
@@ -101,7 +101,7 @@ impl QuicEndpoint {
                 self.stream_id = Some(stream_id);
             } else if let Some(stream_id) = self.streams(ch).open(Dir::Bi) {           
                 self.stream_id = Some(stream_id);
-                info!(self.logger, "Open and send stream on  {:?} {:?}", stream_id, ch);
+               // info!(self.logger, "Open and send stream on  {:?} {:?}", stream_id, ch);
 
                 match self.send(ch, stream_id).write(data) {
                     Ok(_) => {
@@ -160,11 +160,11 @@ impl QuicEndpoint {
             }
             self.timeout = conn.poll_timeout(); //calculate next timeout
             
-            // if let Some(timeout) = self.timeout.take() {
-            //     //info!(self.logger, "timeout and self.latency {:?} {:?}", timeout, self.latency);
-            //     self.timeouts.push_back(timeout);
-            //     self.timeout = Some(timeout);
-            // }
+            if let Some(timeout) = self.timeout.take() {
+                //info!(self.logger, "timeout and self.latency {:?} {:?}", timeout, self.latency);
+                self.timeouts.push_back(timeout);
+                self.timeout = Some(timeout);
+            }
         }
        // info!(self.logger, "self connections {:?}", self.connections.len());
 
@@ -189,13 +189,6 @@ impl QuicEndpoint {
         //info!(self.logger, "next_wakeup ");
        // self.next_wakeup();
 
-    }
-
-    pub fn next_wakeup(&mut self) -> Option<Instant> {
-        let next_inbound = self.inbound.pop_front();
-        //info!(self.logger, "next_inbound {:?}", next_inbound);
-        //info!(self.logger, "self timetout {:?}", self.timeout);
-        min_opt(self.timeout, next_inbound)
     }
 
     pub(super) fn try_read_quic(&mut self, udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>, dispatcher_ref: DispatcherRef) -> io::Result<()> {
@@ -228,7 +221,7 @@ impl QuicEndpoint {
 
                 self.inbound.push_back(self.time + self.latency);
 
-               // info!(self.logger, "udp_state outbound queue lenght {:?}", udp_state.outbound_queue.len());
+               //info!(self.logger, "udp_state outbound queue lenght {:?}", udp_state.outbound_queue.len());
                 if !udp_state.outbound_queue.is_empty() {
                     match udp_state.try_write() {
                         Ok(_) => {
@@ -316,7 +309,7 @@ impl QuicEndpoint {
                 info!(self.logger, "Unidirectional stream opened {:?}", ch);
             }
             Event::Stream(Readable { id }) => {
-                info!(self.logger, "Stream readable {:?} on id {:?}", id, ch);
+               // info!(self.logger, "Stream readable {:?} on id {:?}", id, ch);
                // let mut inbound = self.inbound;
                 let mut receive = self.recv(ch, id);
                 let mut chunks = receive.read(false).unwrap();
@@ -386,36 +379,41 @@ impl QuicEndpoint {
     }
 
     pub(super) fn step(&mut self,  udp_state: &mut UdpState, buffer_pool: &RefCell<BufferPool>, dispatcher_ref: DispatcherRef) -> bool {
-        match self.try_read_quic(udp_state, buffer_pool, dispatcher_ref.clone()) {
-            Ok(()) => {
 
-            }
-            Err(e) => {
-
-            }
-        }
-        match self.try_write_quic(udp_state, dispatcher_ref.clone()) {
-            Ok(()) => {
-
-            }
-            Err(e) => {
-
-            }
-        }
-        // if self.is_idle() {
-        //     return false;
+        // match self.try_write_quic(udp_state, dispatcher_ref.clone()) {
+        //     Ok(()) => {
+        //        //info!(self.logger, "try write")
+        //     }
+        //     Err(e) => {
+        //         error!(self.logger, "try write")
+        //     }
         // }
 
-        let endpoint_t = self.next_wakeup();
-        match min_opt(endpoint_t, Some(self.time)) {
+        match self.try_read_quic(udp_state, buffer_pool, dispatcher_ref.clone()) {
+            Ok(()) => {
+                //info!(self.logger, "try read")
+            }
+            Err(e) => {
+                error!(self.logger, "try read {:?}", e)
+            }
+        }
+
+        //either going to be inbound or timeout
+        let endpoint_t = self.inbound.pop_front();
+        match min_opt(endpoint_t, self.timeout) {
             Some(t) if Some(t) == endpoint_t => {
                 if t != self.time {
                     self.time = self.time.max(t);
-                    info!(self.logger, "advancing to {:?} for endpoint", self.time);
+                    //info!(self.logger, "advancing time for endpoint");
                 }
                 true
             }
-            Some(_) => false, //unreachable!(),
+            Some(t) if Some(t) == self.timeout => {
+                //info!(self.logger, "timeout");
+
+                false
+            }
+            Some(_) => unreachable!(),
             None => false,
         }
     }
