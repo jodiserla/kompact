@@ -4,12 +4,12 @@ use std::time::{Duration, Instant};
 use kompact::prelude::*;
 //use kompact::default_components::DeadletterBox;
 
-const MSG_COUNT: u64 = 10;
+const MSG_COUNT: u64 = 100;
 
 pub fn kompact_network_latency(c: &mut Criterion) {
     let mut g = c.benchmark_group("Ping Pong RTT");
     g.bench_function("Ping Pong RTT (Static)", ping_pong_latency_static);
-   // g.bench_function("Ping Pong RTT (Indexed)", ping_pong_latency_indexed);
+  // g.bench_function("Ping Pong RTT (Indexed)", ping_pong_latency_indexed);
     // g.bench_function(
     //     "Ping Pong RTT Pipeline All (Static)",
     //     ping_pong_latency_pipeline_static,
@@ -32,17 +32,17 @@ pub fn kompact_network_latency(c: &mut Criterion) {
 }
 
 pub fn kompact_network_throughput(c: &mut Criterion) {
-    // let mut g = c.benchmark_group("Ping Pong Throughput with Pipelining");
-    // g.throughput(Throughput::Elements(2 * MSG_COUNT));
-    // for pipeline in [1u64, 10u64, 100u64, 1000u64].iter() {
-    //     //...[1u64, ...
-    //     g.bench_with_input(
-    //         BenchmarkId::from_parameter(pipeline),
-    //         pipeline,
-    //         ping_pong_throughput_static,
-    //     );
-    // }
-    // g.finish();
+    let mut g = c.benchmark_group("Ping Pong Throughput with Pipelining");
+    g.throughput(Throughput::Elements(2 * MSG_COUNT));
+    for pipeline in [1u64, 10u64, 100u64, 1000u64].iter() {
+        //...[1u64, ...
+        g.bench_with_input(
+            BenchmarkId::from_parameter(pipeline),
+            pipeline,
+            ping_pong_throughput_static,
+        );
+    }
+    g.finish();
 }
 
 pub fn latch_overhead(c: &mut Criterion) {
